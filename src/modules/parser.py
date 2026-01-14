@@ -71,7 +71,7 @@ class EffectParser:
         
         if instruction.strip() in self.STATIC_ABILITIES:
             result['action'] = 'static'
-            result['field'] = instruction.strip()
+            result['status'] = instruction.strip()
             return result
         
         tokens = self._tokenize(instruction)
@@ -186,7 +186,7 @@ class EffectParser:
     def get_static_abilities(self, effect_string):
         """Get all static abilities from an effect string."""
         instructions = self.parse(effect_string)
-        return [inst['field'] for inst in instructions if inst.get('action') == 'static']
+        return [inst['status'] for inst in instructions if inst.get('action') == 'static']
     
     def has_trigger(self, effect_string, trigger):
         """Check if effect has specific trigger."""
