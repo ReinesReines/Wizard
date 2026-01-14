@@ -35,7 +35,7 @@ class EffectParser:
     ATTRIBUTES = ['att', 'end']
     
     # Valid colors
-    COLORS = ['green', 'blue', 'red', 'black', 'white']
+    COLORS = ['green', 'blue', 'red']
     
     def __init__(self):
         self.instructions = []
