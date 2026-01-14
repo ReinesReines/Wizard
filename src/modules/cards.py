@@ -5,10 +5,9 @@ class Cards:
         self.sp_mana = sp_mana
         self.type = card_type
         self.description = description
-        self.tapped = 0     # 0 means untapped, 1 means tapped
+        self.tapped = 0
         self.status = ""
 
-# Subclass for summons
 class SummonCard(Cards):
     def __init__(self, name, generic_mana, sp_mana, description, att, end, effect):
         super().__init__(name, generic_mana, sp_mana, "Creature", description)
@@ -16,19 +15,16 @@ class SummonCard(Cards):
         self.defence = end
         self.effect = effect
 
-# Subclass for spells
 class SpellCard(Cards):
     def __init__(self, name, generic_mana, sp_mana, description, effect):
         super().__init__(name, generic_mana, sp_mana, "Spell", description)
         self.effect = effect
 
-# Subclass for enchantments        
 class EnchantmentCards(Cards):
     def __init__(self, name, generic_mana, sp_mana, description, effect):
         super().__init__(name, generic_mana, sp_mana, "Enchantment", description)
         self.effect = effect
 
-# Subclass for Lands
 class LandCards(Cards):
     def __init__(self, name, generic_mana, sp_mana, description, effect):
         super().__init__(name, generic_mana, sp_mana, "Land", description)

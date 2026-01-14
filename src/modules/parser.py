@@ -3,281 +3,194 @@ Effect Parser for card effects
 
 Parses the effect strings from cards and breaks them down into
 structured instructions that can be executed by the game engine.
+
+Syntax Rules:
+- First token is trigger if it ends with '?' (summon?, attack?, block?, tap?, enter?)
+- Static abilities: haste, flying, entertap, unblockable, vigilant
+- Modifiers: inc, dec
+- Actions: gen, draw, discard, heal, return, count
+- Places: graveyard, deck
+- Parentheses for expressions: inc att (graveyard count Skeleton)
+
+Returns: {'trigger', 'raw', 'action', 'field', 'value'}
 """
+
+import re
 
 class EffectParser:
     """
-    Parses card effect strings into structured data.
+    Parses card effects.
     
-    Example:
-        parser = EffectParser()
-        instructions = parser.parse("attack? damage player 1; inc att 2")
-        # Returns: [
-        #     {'trigger': 'attack?', 'action': 'damage', 'target': 'player', 'value': 1},
-        #     {'trigger': None, 'action': 'inc', 'attribute': 'att', 'value': 2}
-        # ]
+    Examples:
+        parser.parse("attack? inc att 2")
+        # Returns: {'trigger': 'attack?', 'action': 'inc', 'field': 'att', 'value': 2, 'raw': '...'}
+        
+        parser.parse("inc att (graveyard count Skeleton)")
+        # Returns: {'trigger': None, 'action': 'inc', 'field': 'att', 'value': ('graveyard', 'count', 'Skeleton'), 'raw': '...'}
+        
+        parser.parse("global inc att 1")
+        # Returns: {'trigger': None, 'action': 'inc', 'field': 'att', 'value': 1, 'global': True, 'raw': '...'}
     """
     
-    # Keywords that can be triggers (end with ?)
-    TRIGGERS = ['tap', 'attack?', 'block?', 'summon?', 'damage player?', 'enter']
-    
-    # Keywords that are static abilities (no trigger needed)
-    STATIC_ABILITIES = ['haste', 'flying', 'unblockable', 'vigilance', 'defender', 
-                        'first_strike', 'lifelink', 'notap']
-    
-    # Actions that modify stats
-    STAT_MODIFIERS = ['inc', 'dec']
-    
-    # Actions that deal with cards/game state
-    ACTIONS = ['gen', 'damage', 'draw', 'discard', 'heal', 'return', 'count']
-    
-    # Attributes that can be modified
-    ATTRIBUTES = ['att', 'end']
-    
-    # Valid colors
-    COLORS = ['green', 'blue', 'red']
+    TRIGGERS = ['summon?', 'block?', 'attack?', 'tap?', 'enter?']
+    STATIC_ABILITIES = ['haste', 'flying', 'entertap', 'unblockable', 'vigilant', 'notap']
+    MODIFIERS = ['inc', 'dec']
+    ACTIONS = ['gen', 'draw', 'discard', 'heal', 'return', 'count']
+    PLACES = ['graveyard', 'deck']
+    FIELDS = ['att', 'end']
     
     def __init__(self):
-        self.instructions = []
+        pass
     
     def parse(self, effect_string):
-        """
-        Parse an effect string and return a list of instruction dictionaries.
-        
-        Args:
-            effect_string (str): The effect string to parse
-            
-        Returns:
-            list: List of instruction dictionaries
-        """
+        """Parse effect string and return list of instruction dictionaries (semicolon-separated)."""
         if not effect_string or effect_string.strip() == "":
             return []
         
-        self.instructions = []
-        
-        # Split by semicolon to get individual instructions
+        instructions = []
         raw_instructions = effect_string.split(';')
         
         for instruction in raw_instructions:
             instruction = instruction.strip()
             if instruction:
-                parsed = self._parse_instruction(instruction)
+                parsed = self._parse_single(instruction)
                 if parsed:
-                    self.instructions.append(parsed)
+                    instructions.append(parsed)
         
-        return self.instructions
+        return instructions
     
-    def _parse_instruction(self, instruction):
-        """
-        Parse a single instruction into a structured dictionary.
+    def _parse_single(self, instruction):
+        """Parse single instruction into {'trigger', 'raw', 'action', 'field', 'value'}."""
+        result = {
+            'trigger': None,
+            'raw': instruction,
+            'action': None,
+            'field': None,
+            'value': None
+        }
         
-        Args:
-            instruction (str): A single instruction string
-            
-        Returns:
-            dict: Parsed instruction or None if invalid
-        """
-        tokens = instruction.split()
+        if instruction.strip() in self.STATIC_ABILITIES:
+            result['action'] = 'static'
+            result['field'] = instruction.strip()
+            return result
+        
+        tokens = self._tokenize(instruction)
         if not tokens:
             return None
         
-        result = {
-            'trigger': None,
-            'action': None,
-            'raw': instruction
-        }
+        idx = 0
         
-        # Check if first token is a trigger
-        if tokens[0] in self.TRIGGERS or tokens[0].endswith('?'):
-            result['trigger'] = tokens[0]
-            tokens = tokens[1:]  # Remove trigger from tokens
+        if tokens[idx].endswith('?'):
+            result['trigger'] = tokens[idx]
+            idx += 1
         
-        if not tokens:
+        if idx >= len(tokens):
             return result
         
-        # Parse the action
-        action = tokens[0]
+        if tokens[idx] == 'global':
+            result['global'] = True
+            idx += 1
         
-        # Static abilities (keywords)
-        if action in self.STATIC_ABILITIES:
-            result['action'] = 'static_ability'
-            result['ability'] = action
+        if idx >= len(tokens):
             return result
         
-        # Mana generation
-        if action == 'gen':
-            result['action'] = 'gen'
-            if len(tokens) > 1:
-                # Handle multiple colors with /
-                colors = tokens[1].split('/')
-                result['colors'] = colors
-            return result
+        # Get action
+        action = tokens[idx]
+        result['action'] = action
+        idx += 1
         
-        # Stat modifiers (inc/dec)
-        if action in self.STAT_MODIFIERS:
-            result['action'] = action
-            if len(tokens) > 1:
-                result['attribute'] = tokens[1]
-                if len(tokens) > 2:
-                    try:
-                        result['value'] = int(tokens[2])
-                    except ValueError:
-                        result['value'] = 1
+        # Parse based on action type
+        if action in self.MODIFIERS:
+            if idx < len(tokens):
+                result['field'] = tokens[idx]
+                idx += 1
+            
+            if idx < len(tokens):
+                if isinstance(tokens[idx], tuple):
+                    result['value'] = tokens[idx]
                 else:
-                    result['value'] = 1
-            return result
-        
-        # Damage
-        if action == 'damage':
-            result['action'] = 'damage'
-            if len(tokens) > 1:
-                result['target'] = tokens[1]
-                if len(tokens) > 2:
                     try:
-                        result['value'] = int(tokens[2])
+                        result['value'] = int(tokens[idx])
                     except ValueError:
                         result['value'] = 1
-            return result
+            else:
+                result['value'] = 1
         
-        # Handle draw
-        if action == 'draw':
-            result['action'] = 'draw'
-            if len(tokens) > 1:
+        elif action == 'gen':
+            if idx < len(tokens):
+                colors = tokens[idx].split('/')
+                result['field'] = 'mana'
+                result['value'] = colors
+        
+        elif action in ['draw', 'discard', 'heal']:
+            if idx < len(tokens):
                 try:
-                    result['value'] = int(tokens[1])
+                    result['value'] = int(tokens[idx])
                 except ValueError:
                     result['value'] = 1
             else:
                 result['value'] = 1
-            return result
         
-        # Handle discard
-        if action == 'discard':
-            result['action'] = 'discard'
-            if len(tokens) > 1:
-                try:
-                    result['value'] = int(tokens[1])
-                except ValueError:
-                    result['value'] = 1
-            else:
-                result['value'] = 1
-            return result
+        elif action == 'count':
+            if idx < len(tokens):
+                result['field'] = 'count'
+                result['value'] = tokens[idx]
         
-        # Handle heal
-        if action == 'heal':
-            result['action'] = 'heal'
-            if len(tokens) > 1:
-                try:
-                    result['value'] = int(tokens[1])
-                except ValueError:
-                    result['value'] = 1
-            else:
-                result['value'] = 1
-            return result
+        elif action == 'return':
+            if idx < len(tokens):
+                result['field'] = tokens[idx]
+                idx += 1
+            if idx < len(tokens):
+                result['value'] = tokens[idx]
         
-        # Handle count
-        if action == 'count':
-            result['action'] = 'count'
-            if len(tokens) > 1:
-                result['card_type'] = tokens[1]
-            return result
-        
-        # Handle global effects
-        if action == 'global':
-            result['action'] = 'global'
-            result['scope'] = 'all_creatures'
-            # Parse the rest as a sub-instruction
-            sub_instruction = ' '.join(tokens[1:])
-            sub_parsed = self._parse_instruction(sub_instruction)
-            if sub_parsed:
-                result['effect'] = sub_parsed
-            return result
-        
-        # Handle graveyard operations
-        if action == 'graveyard':
-            result['action'] = 'graveyard'
-            # Parse the rest as what to do with graveyard
-            result['operation'] = ' '.join(tokens[1:])
-            return result
-        
-        # Handle return (from graveyard to hand)
-        if action == 'return':
-            result['action'] = 'return'
-            if len(tokens) >= 3:
-                result['from'] = tokens[1]  # e.g., 'graveyard'
-                result['to'] = tokens[2]    # e.g., 'hand'
-            return result
-        
-        # Handle entertap
-        if action == 'entertap':
-            result['action'] = 'entertap'
-            return result
-        
-        # Handle protection
-        if action == 'protection':
-            result['action'] = 'protection'
-            if len(tokens) > 1:
-                result['color'] = tokens[1]
-            return result
-        
-        # Handle ignore block
-        if action == 'ignore':
-            result['action'] = 'ignore'
-            if len(tokens) > 1:
-                result['what'] = tokens[1]
-            return result
-        
-        # Handle block modifier
-        if action == 'block':
-            result['action'] = 'block_modifier'
-            if len(tokens) > 1:
-                result['modifier'] = tokens[1]
-            return result
-        
-        # Unknown action
-        result['action'] = 'unknown'
-        result['tokens'] = tokens
         return result
     
-    def get_triggers(self, effect_string):
-        """
-        Get all triggers from an effect string.
+    def _tokenize(self, instruction):
+        tokens = []
+        current = ""
+        depth = 0
+        paren_content = ""
         
-        Args:
-            effect_string (str): The effect string to parse
-            
-        Returns:
-            list: List of trigger strings
-        """
+        for char in instruction:
+            if char == '(':
+                if depth == 0:
+                    if current.strip():
+                        tokens.append(current.strip())
+                        current = ""
+                depth += 1
+            elif char == ')':
+                depth -= 1
+                if depth == 0:
+                    inner_tokens = paren_content.strip().split()
+                    tokens.append(tuple(inner_tokens))
+                    paren_content = ""
+            elif depth > 0:
+                paren_content += char
+            elif char.isspace():
+                if current.strip():
+                    tokens.append(current.strip())
+                    current = ""
+            else:
+                current += char
+        
+        if current.strip():
+            tokens.append(current.strip())
+        
+        return tokens
+    
+    def get_triggers(self, effect_string):
+        """Get all triggers from an effect string."""
         instructions = self.parse(effect_string)
         return [inst['trigger'] for inst in instructions if inst.get('trigger')]
     
+    def get_static_abilities(self, effect_string):
+        """Get all static abilities from an effect string."""
+        instructions = self.parse(effect_string)
+        return [inst['field'] for inst in instructions if inst.get('action') == 'static']
+    
     def has_trigger(self, effect_string, trigger):
-        """
-        Check if an effect string contains a specific trigger.
-        
-        Args:
-            effect_string (str): The effect string to parse
-            trigger (str): The trigger to look for
-            
-        Returns:
-            bool: True if the trigger is present
-        """
+        """Check if effect has specific trigger."""
         return trigger in self.get_triggers(effect_string)
     
-    def get_static_abilities(self, effect_string):
-        """
-        Get all static abilities from an effect string.
-        
-        Args:
-            effect_string (str): The effect string to parse
-            
-        Returns:
-            list: List of static ability names
-        """
-        instructions = self.parse(effect_string)
-        return [inst['ability'] for inst in instructions 
-                if inst.get('action') == 'static_ability']
-    
     def __repr__(self):
-        return f"EffectParser(instructions={len(self.instructions)})"
+        return f"EffectParser()"

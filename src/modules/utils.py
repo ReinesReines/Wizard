@@ -1,105 +1,171 @@
-from .parser import EffectParser
+try:
+    from .parser import EffectParser
+    from .cards import *
+except:
+    from parser import EffectParser
+    from cards import *
 
 effect_parser = EffectParser()
 
-def parse_card_effect(card):
-    """
-    Parse a card's effect string.
-    """
+# ====================
+# PARSING FUNCTIONS
+# ====================
+
+def parse_card_effect(card: Cards) -> list:
+    """Parse a card's effect string."""
     if hasattr(card, 'effect'):
         return effect_parser.parse(card.effect)
     return []
 
-def get_card_triggers(card):
-    """
-    Get all triggers from a card.
-    """
+def get_card_triggers(card: Cards) -> list:
+    """Get all triggers from a card."""
     if hasattr(card, 'effect'):
         return effect_parser.get_triggers(card.effect)
     return []
 
-def get_card_static_abilities(card):
-    """
-    Get all static abilities from a card.
-    """
+def get_card_static_abilities(card: Cards) -> list:
+    """Get all static abilities from a card."""
     if hasattr(card, 'effect'):
         return effect_parser.get_static_abilities(card.effect)
     return []
 
-def card_has_ability(card, ability):
-    """
-    Check if a card has a specific static ability.
-    """
+def card_has_ability(card: Cards, ability) -> bool:
+    """Check if a card has a specific static ability."""
     return ability in get_card_static_abilities(card)
 
-def card_has_trigger(card, trigger):
-    """
-    Check if a card has a specific trigger.
-    """
+def card_has_trigger(card: Cards, trigger) -> bool:
+    """Check if a card has a specific trigger."""
     return trigger in get_card_triggers(card)
 
-def get_instructions_by_trigger(card, trigger):
-    """
-    Get all instructions for a specific trigger.
-    """
+def get_instructions_by_trigger(card: Cards, trigger) -> list:
+    """Get all instructions for a specific trigger."""
     instructions = parse_card_effect(card)
     return [inst for inst in instructions if inst.get('trigger') == trigger]
 
-def get_static_instructions(card):
-    """
-    Get all instructions without triggers (always active).
-    """
+def get_static_instructions(card: Cards) -> list:
+    """Get all instructions without triggers (always active)."""
     instructions = parse_card_effect(card)
     return [inst for inst in instructions if not inst.get('trigger')]
 
-def can_attack_immediately(card):
-    """
-    Check if a card can attack the turn it's played (has haste).
-    """
+# ====================
+# ABILITY CHECKS
+# ====================
+
+def can_attack_immediately(card: Cards) -> bool:
+    """Check if a card can attack the turn it's played (has haste)."""
     return card_has_ability(card, 'haste')
 
-def can_be_blocked(card):
-    """
-    Check if a card can be blocked.
-    """
+def can_be_blocked(card: Cards) -> bool:
+    """Check if a card can be blocked."""
     return not card_has_ability(card, 'unblockable')
 
-def has_flying(card):
-    """
-    Check if a card has flying.
-    """
+def has_flying(card: Cards) -> bool:
+    """Check if a card has flying."""
     return card_has_ability(card, 'flying')
 
-def taps_when_attacking(card):
-    """
-    Check if a card taps when attacking.
-    """
-    return not (card_has_ability(card, 'vigilance') or card_has_ability(card, 'notap'))
+def taps_when_attacking(card: Cards) -> bool:
+    """Check if a card taps when attacking."""
+    return not (card_has_ability(card, 'vigilant') or card_has_ability(card, 'notap'))
 
-def get_mana_colors(land_card):
-    """
-    Get the mana colors a land can produce.
-    """
+def enters_tapped(card: Cards) -> bool:
+    """Check if a card enters the battlefield tapped."""
+    return card_has_ability(card, 'entertap')
+
+# ====================
+# LAND UTILITIES
+# ====================
+
+def get_mana_colors(land_card: Cards) -> list:
+    """Get the mana colors a land can produce."""
     instructions = parse_card_effect(land_card)
     colors = []
     
     for inst in instructions:
         if inst.get('action') == 'gen':
-            colors.extend(inst.get('colors', []))
+            colors.extend(inst.get('value', []))
     
-    return list(set(colors))  # Remove duplicates
+    return list(set(colors))
 
-def enters_tapped(card):
+# ====================
+# EXECUTION ENGINE
+# ====================
+
+def execute_card(card: Cards, game_state=None):
     """
-    Check if a card enters the battlefield tapped.
+    Execute card effects and return modified card with computed values.
+    Example: new_card = execute_card(skeleton_giant, {'graveyard': [cards...]})
     """
+    if not isinstance(card, SummonCard):
+        return card
+    
+    import copy
+    executed_card = copy.deepcopy(card)
+    
     instructions = parse_card_effect(card)
-    return any(inst.get('action') == 'entertap' for inst in instructions)
+    
+    for inst in instructions:
+        if inst.get('trigger'):
+            continue
+        
+        action = inst.get('action')
+        
+        if action == 'inc':
+            field = inst.get('field')
+            value = inst.get('value')
+            
+            if isinstance(value, tuple):
+                value = _resolve_expression(value, game_state)
+            
+            if field == 'att':
+                executed_card.attack += value
+            elif field == 'end':
+                executed_card.defence += value
+        
+        elif action == 'dec':
+            field = inst.get('field')
+            value = inst.get('value')
+            
+            if isinstance(value, tuple):
+                value = _resolve_expression(value, game_state)
+            
+            if field == 'att':
+                executed_card.attack -= value
+            elif field == 'end':
+                executed_card.defence -= value
+    
+    return executed_card
 
-def get_card_summary(card):
-    """
-    Get a summary of a card's parsed effects.
-    """
+def _resolve_expression(expr, game_state):
+    """Resolve expression tuple like ('graveyard', 'count', 'Skeleton') to int value."""
+    if not isinstance(expr, tuple) or len(expr) == 0:
+        return 0
+    
+    if len(expr) >= 3 and expr[0] in ['graveyard', 'deck']:
+        place = expr[0]
+        operation = expr[1]
+        card_name = expr[2]
+        
+        if operation == 'count' and game_state and place in game_state:
+            cards_in_place = game_state[place]
+            count = sum(1 for c in cards_in_place if hasattr(c, 'name') and c.name == card_name)
+            return count
+    
+    return 0
+
+def count_in_graveyard(graveyard, card_name) -> int:
+    """Count specific cards in graveyard."""
+    return sum(1 for card in graveyard if hasattr(card, 'name') and card.name == card_name)
+
+def count_in_deck(deck, card_name) -> int:
+    """Count specific cards in deck."""
+    return sum(1 for card in deck if hasattr(card, 'name') and card.name == card_name)
+
+# ====================
+# CARD SUMMARY
+# ====================
+
+def get_card_summary(card: Cards) -> dict:
+    """Get a summary of a card's parsed effects."""
     return {
         'name': card.name,
         'type': card.type,
@@ -108,3 +174,19 @@ def get_card_summary(card):
         'instructions': parse_card_effect(card),
         'effect_string': card.effect if hasattr(card, 'effect') else ''
     }
+
+# ====================
+# TURN PHASE HELPERS
+# ====================
+
+def untap_all(cards: Cards) -> list:
+    """
+    Untap all cards unless they have an upkeep condition preventing it.
+    Used at the beginning phase of a turn.
+    Returns list of cards that were untapped.
+    """
+    untapped = []
+    for card in cards:
+        if hasattr(card, 'tapped'):
+            card.status = 0
+    return untapped
