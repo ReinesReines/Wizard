@@ -10,12 +10,11 @@ class Cards:
 
 # Subclass for summons
 class SummonCard(Cards):
-    def __init__(self, name, generic_mana, sp_mana, description, att, end, effect, status):
+    def __init__(self, name, generic_mana, sp_mana, description, att, end, effect):
         super().__init__(name, generic_mana, sp_mana, "Creature", description)
         self.attack = att
         self.defence = end
         self.effect = effect
-        self.status = status
 
 # Subclass for spells
 class SpellCard(Cards):
@@ -31,5 +30,6 @@ class EnchantmentCards(Cards):
 
 # Subclass for Lands
 class LandCards(Cards):
-    def __init__(self, name, generic_mana, sp_mana, description, ):
+    def __init__(self, name, generic_mana, sp_mana, description, effect):
         super().__init__(name, generic_mana, sp_mana, "Land", description)
+        self.effect = effect
