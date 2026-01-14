@@ -81,7 +81,7 @@ alpha_wolf = SummonCard(name="Alpha Wolf", generic_mana=2, sp_mana="green", desc
 
 # Blue creatures
 skeleton = SummonCard(name="Skeleton", generic_mana=2, sp_mana="blue", description="Haste.\nGains +1 to endurance when blocking.", att=2, end=2, effect="block? inc end 1")
-skeleton_army = SummonCard(name="Skeleton Army", generic_mana=3, sp_mana="blue", description="Gains +1 to attack for every skeleton in the graveyard.", att=2, end=2, effect="graveyard count skeleton; inc att")
+skeleton_army = SummonCard(name="Skeleton Army", generic_mana=3, sp_mana="blue", description="Gains +1 to attack for every skeleton in the graveyard.", att=2, end=2, effect="graveyard count skeleton; inc att each")
 phantom_warrior = SummonCard(name="Phantom Warrior", generic_mana=3, sp_mana="blue", description="Cannot be blocked.", att=2, end=3, effect="unblockable")
 sea_serpent = SummonCard(name="Sea Serpent", generic_mana=4, sp_mana="blue", description="Can only attack if defending player controls an island.|Ssssss", att=5, end=5, effect="")
 arcane_scholar = SummonCard(name="Arcane Scholar", generic_mana=2, sp_mana="blue", description="When this creature enters the battlefield, draw a card.|He is smart", att=1, end=3, effect="summon? draw 1")
