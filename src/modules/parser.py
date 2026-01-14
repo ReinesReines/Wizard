@@ -281,35 +281,3 @@ class EffectParser:
     
     def __repr__(self):
         return f"EffectParser(instructions={len(self.instructions)})"
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    parser = EffectParser()
-    
-    # Test cases
-    test_effects = [
-        "tap gen green",
-        "attack? damage player 1",
-        "summon? inc att 1; inc end 1",
-        "entertap; tap gen green/blue",
-        "haste",
-        "flying; tap damage target 1",
-        "global inc att 1",
-        "graveyard count skeleton; inc att",
-        "unblockable",
-        "attack? inc att 2; dec end 1",
-        "block? inc end 1",
-        "damage player? discard 1",
-        "summon? draw 1",
-        "flying; summon? heal 3",
-        "notap",
-        "ignore block"
-    ]
-    
-    print("Testing Effect Parser\n" + "="*50)
-    for effect in test_effects:
-        print(f"\nEffect: '{effect}'")
-        result = parser.parse(effect)
-        for instruction in result:
-            print(f"  -> {instruction}")
