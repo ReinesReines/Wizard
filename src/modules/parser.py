@@ -15,8 +15,6 @@ Syntax Rules:
 Returns: {'trigger', 'raw', 'action', 'field', 'value'}
 """
 
-import re
-
 class EffectParser:
     """
     Parses card effects.
