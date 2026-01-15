@@ -93,7 +93,6 @@ def get_mana_colors(land_card: Cards) -> list:
 def execute_card(card: Cards, game_state=None):
     """
     Execute card effects and return modified card with computed values.
-    Example: new_card = execute_card(skeleton_giant, {'graveyard': [cards...]})
     """
     if not isinstance(card, SummonCard):
         return card
