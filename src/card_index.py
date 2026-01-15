@@ -77,9 +77,9 @@ alpha_wolf = SummonCard(name="Alpha Wolf", generic_mana=2, sp_mana="green", desc
 # Blue creatures
 skeleton = SummonCard(name="Skeleton", generic_mana=2, sp_mana="blue", description="Haste.\nGains +1 to endurance when blocking.", att=2, end=2, effect="haste; block? inc end 1")
 skeleton_army = SummonCard(name="Skeleton Army", generic_mana=3, sp_mana="blue", description="Gains +1 to attack for every skeleton in the graveyard.", att=2, end=2, effect="inc att (graveyard count Skeleton)")
-phantom_warrior = SummonCard(name="Phantom Warrior", generic_mana=3, sp_mana="blue", description="Cannot be blocked.", att=2, end=3, effect="unblockable")
+phantom_warrior = SummonCard(name="Phantom Warrior", generic_mana=3, sp_mana="blue", description="Haste. This creature can attack instantly.", att=2, end=3, effect="haste")
 sea_serpent = SummonCard(name="Sea Serpent", generic_mana=4, sp_mana="blue", description="A powerful sea creature. It's very poisonous.|Ssssss", att=5, end=5, effect="")
-arcane_scholar = SummonCard(name="Arcane Scholar", generic_mana=2, sp_mana="blue", description="When this creature enters the battlefield, draw a card.|He is smart", att=1, end=3, effect="enter? draw 1")
+arcane_scholar = SummonCard(name="Arcane Scholar", generic_mana=2, sp_mana="blue", description="When this creature enters the battlefield, draw a card.|He is smart", att=1, end=3, effect="draw 1")
 vergil = SummonCard(name="Vergil", generic_mana=5, sp_mana="blue", description="Ignores all defences for the opponent.|Deadbeat Dad", att=6, end=6, effect="unblockable")
 
 # Red creatures
