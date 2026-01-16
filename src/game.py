@@ -1,5 +1,5 @@
 from modules.cards import Cards, SummonCard, SpellCard
-from modules.utils import execute_card, enters_tapped, card_has_trigger
+from modules.utils import execute_card, enters_tapped, card_has_trigger, get_all_keywords
 from card_index import *
 import random
 import json
@@ -94,6 +94,10 @@ class GameEngine:
         # Check if card enters tapped
         if enters_tapped(executed_card):
             executed_card.tapped = 1
+        
+        # Extract and set keyword abilities in status
+        keywords = get_all_keywords(executed_card)
+        executed_card.status = ", ".join(keywords) if keywords else ""
         
         # Add to battlefield
         battlefield_entry = {

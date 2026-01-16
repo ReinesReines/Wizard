@@ -31,10 +31,10 @@ return [from] [to]  - move card between zones
 
 STATIC ABILITIES (keywords):
 haste       - can attack the turn it enters
-flying      - can only be blocked by creatures with flying
+flying      - can only be blocked by creatures with flying or reach
+reach       - can block creatures with flying
 unblockable - cannot be blocked
 vigilant    - doesn't tap when attacking
-notap       - attacking doesn't cause this creature to tap
 entertap    - enters the battlefield tapped
 
 SPECIAL:
@@ -42,11 +42,13 @@ global              - applies effect to all your creatures
 (graveyard count X) - dynamic value from graveyard
 
 EXAMPLES:
-tap? gen green                   - Tap to generate green mana
-attack? inc att 1                - Gain +1 attack when attacking
-enter? draw 1                    - Draw a card when entering
+tap? gen green                     - Tap to generate green mana
+attack? inc att 1                  - Gain +1 attack when attacking
+enter? draw 1                      - Draw a card when entering
 inc att (graveyard count Skeleton) - +1 attack per skeleton in graveyard
-entertap; tap? gen green/blue    - Enters tapped, tap for green or blue mana
+entertap; tap? gen green/blue      - Enters tapped, tap for green or blue mana
+vigilant                           - Doesn't tap when attacking
+haste; flying                      - Can attack immediately and can only be blocked by flying creatures
 """
 
 # TODO: finish this file
@@ -71,8 +73,8 @@ wild_highlands = LandCards(name="Wild Highlands", generic_mana=0, sp_mana="", de
 ################
 
 # Green creatures
-slime = SummonCard(name="Slime", generic_mana=1, sp_mana="green", description="Attacking doesn't cause this creature to tap.", att=2, end=2, effect="notap")
-bigger_slime = SummonCard(name="Bigger Slime", generic_mana=2, sp_mana="green", description="Attacking doesn't cause this creature to tap.|It's a bigger slime.", att=3, end=3, effect="notap")
+slime = SummonCard(name="Slime", generic_mana=1, sp_mana="green", description="Attacking doesn't cause this creature to tap.", att=2, end=2, effect="vigilant")
+bigger_slime = SummonCard(name="Bigger Slime", generic_mana=2, sp_mana="green", description="Attacking doesn't cause this creature to tap.|It's a bigger slime.", att=3, end=3, effect="vigilant")
 forest_bear = SummonCard(name="Forest Bear", generic_mana=1, sp_mana="green", description="A powerful bear from the deep forest.|Why does he look like a dog", att=2, end=2, effect="")
 vine_elemental = SummonCard(name="Vine Elemental", generic_mana=3, sp_mana="green", description="Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie", att=2, end=3, effect="enter? inc att 1; inc end 1")
 alpha_wolf = SummonCard(name="Alpha Wolf", generic_mana=2, sp_mana="green", description="Other creatures you control get +1 attack.|Sorry, you're not a sigma", att=3, end=2, effect="global inc att 1")

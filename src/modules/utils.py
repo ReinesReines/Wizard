@@ -65,11 +65,16 @@ def has_flying(card: Cards) -> bool:
 
 def taps_when_attacking(card: Cards) -> bool:
     """Check if a card taps when attacking."""
-    return not (card_has_ability(card, 'vigilant') or card_has_ability(card, 'notap'))
+    return not card_has_ability(card, 'vigilant')
 
 def enters_tapped(card: Cards) -> bool:
     """Check if a card enters the battlefield tapped."""
     return card_has_ability(card, 'entertap')
+
+def get_all_keywords(card: Cards) -> list:
+    """Extract all keyword abilities from a card's effect."""
+    keywords = ['haste', 'flying', 'reach', 'unblockable', 'vigilant', 'entertap']
+    return [kw for kw in keywords if card_has_ability(card, kw)]
 
 # ====================
 # LAND UTILITIES
