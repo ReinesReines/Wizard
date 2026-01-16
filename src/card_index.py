@@ -93,4 +93,4 @@ berserker = SummonCard(name="Berserker", generic_mana=2, sp_mana="red", descript
 
 _universal_cards = [slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf, skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar,
                     vergil, goblin_raider, fire_elemental, dragon_whelp, berserker]
-_land_cards = [forest, island, mountain, ]
+_land_cards = [forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands]
