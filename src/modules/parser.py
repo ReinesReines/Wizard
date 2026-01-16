@@ -1,33 +1,6 @@
-"""
-Effect Parser for card effects
-
-Parses the effect strings from cards and breaks them down into
-structured instructions that can be executed by the game engine.
-
-Syntax Rules:
-- First token is trigger if it ends with '?' (summon?, attack?, block?, tap?, enter?)
-- Static abilities: haste, flying, entertap, unblockable, vigilant
-- Modifiers: inc, dec
-- Actions: gen, draw, discard, heal, return, count
-- Places: graveyard, deck
-- Parentheses for expressions: inc att (graveyard count Skeleton)
-
-Returns: {'trigger', 'raw', 'action', 'field', 'value'}
-"""
-
 class EffectParser:
     """
     Parses card effects.
-    
-    Examples:
-        parser.parse("attack? inc att 2")
-        # Returns: {'trigger': 'attack?', 'action': 'inc', 'field': 'att', 'value': 2, 'raw': '...'}
-        
-        parser.parse("inc att (graveyard count Skeleton)")
-        # Returns: {'trigger': None, 'action': 'inc', 'field': 'att', 'value': ('graveyard', 'count', 'Skeleton'), 'raw': '...'}
-        
-        parser.parse("global inc att 1")
-        # Returns: {'trigger': None, 'action': 'inc', 'field': 'att', 'value': 1, 'global': True, 'raw': '...'}
     """
     
     TRIGGERS = ['summon?', 'block?', 'attack?', 'tap?', 'enter?']
