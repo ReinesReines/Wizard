@@ -27,10 +27,10 @@ A Magic: The Gathering inspired card game with custom cards, mana system, and co
 - Dual lands → choice of two colors (enter tapped)
 
 **Mana Costs:**
-- Cards have a cost like "2 red" = 1 generic + 1 red
+- Cards have a cost like "3 red" = 3 generic + 1 red (total 4 mana)
 - Generic mana can be paid with ANY color
 - Colored mana MUST be paid with that specific color
-- Example: Fire Elemental (3 red) needs 2 generic + 1 red
+- Example: Fire Elemental (3 red) needs 3 generic + 1 red = 4 total
 
 **Rules:**
 - Mana pools clear at end of turn
@@ -92,6 +92,10 @@ A Magic: The Gathering inspired card game with custom cards, mana system, and co
 - `draw [n]` - Draw cards
 - `inc [field] [n]` - Increase attack/defence
 - `dec [field] [n]` - Decrease attack/defence
+- `damage [n] [target]` - Deal damage (damage 3 player / damage 2 creature)
+- `destroy [target]` - Destroy creature (destroy creature)
+- `discard [n]` - Opponent discards cards (discard 2)
+- `heal [n]` - Restore health (heal 4)
 
 **Special:**
 - `global` - Effect applies to all your creatures (Alpha Wolf)
@@ -232,6 +236,29 @@ def check_block_triggers(self, blocker_ids: list[str])
     # Execute "block?" for all blockers
 ```
 
+### Sorcery System
+```python
+def cast_sorcery(self, player, card_id)
+    # Validate: check phase (must be main phase)
+    # Check and pay mana cost
+    # Resolve effect immediately
+    # Move card from hand to graveyard
+
+def apply_sorcery_effect(self, player, card)
+    # Parse effect string and execute
+    # Handle: damage, draw, destroy, discard, heal, stat buffs
+
+def deal_damage(self, amount, target, source)
+    # target = "player" or creature_id
+    # Apply damage to health or creature defence
+
+def destroy_creature(self, creature_id)
+    # Move creature to graveyard regardless of defence
+
+def force_discard(self, player, count)
+    # Opponent discards N cards from hand
+```
+
 ### Helper Functions
 ```python
 def has_keyword(self, card, keyword)
@@ -353,10 +380,12 @@ Result: All three creatures die!
 ✓ **Global Effects** - Alpha Wolf buffs all creatures  
 ✓ **Graveyard Counting** - Skeleton Army scales with graveyard  
 ✓ **Temporary Buffs** - Combat buffs that expire at cleanup  
+✓ **Sorceries** - One-time spell cards with various effects  
 
 ### Simplifications
 
-✗ **No Instants/Sorceries** - Only creatures and lands for now  
+✓ **Sorceries** - One-time spells castable during main phase  
+✗ **No Instants** - Can't cast spells during combat/opponent's turn  
 ✗ **No Priority Passing** - Simplified turn structure  
 ✗ **No Stack** - Effects resolve immediately  
 ✗ **No Artifacts/Enchantments** - Future expansion  
@@ -430,6 +459,21 @@ Result: All three creatures die!
 - Volcanic Peak (entertap; tap? gen red/blue)
 - Wild Highlands (entertap; tap? gen red/green)
 
+### Sorceries (Examples)
+
+**Green:**
+- Giant Growth (0 green, inc att 3; inc end 3 - target creature)
+- Regrowth (1 green, return creature from graveyard to hand)
+
+**Blue:**
+- Divination (2 blue, draw 2)
+- Mind Rot (2 blue, discard 2)
+
+**Red:**
+- Lightning Strike (2 red, damage 3 creature/player)
+- Flame Slash (1 red, damage 4 creature)
+- Lava Axe (4 red, damage 5 player)
+
 ---
 
 ## Implementation Priority
@@ -450,10 +494,12 @@ Result: All three creatures die!
 3. Global effects (`apply_global_effect()`)
 
 ### Phase 4: Advanced Features
-1. Enter-the-battlefield triggers
-2. Graveyard counting mechanics
-3. Multiple blockers damage assignment
-4. Win condition checking
+1. Sorcery system (`cast_sorcery()`, `apply_sorcery_effect()`)
+2. Sorcery-specific actions (`deal_damage()`, `destroy_creature()`, `force_discard()`)
+3. Enter-the-battlefield triggers
+4. Graveyard counting mechanics
+5. Multiple blockers damage assignment
+6. Win condition checking
 
 ---
 
@@ -508,7 +554,9 @@ Wizard/
 4. Test combat with simple creatures
 5. Add trigger system (Phase 3)
 6. Test complex cards (Berserker, Alpha Wolf, Skeleton Army)
-7. Implement spells
+7. Implement sorcery system (Phase 4)
+8. Add parser actions for sorceries (damage, destroy, discard, heal)
+9. Test sorcery cards (Lightning Strike, Divination, etc.)
 
 ---
 
