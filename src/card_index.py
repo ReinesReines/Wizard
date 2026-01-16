@@ -88,7 +88,7 @@ vergil = SummonCard(name="Vergil", generic_mana=5, sp_mana="blue", description="
 # Red creatures
 goblin_raider = SummonCard(name="Goblin Raider", generic_mana=1, sp_mana="red", description="Haste. This creature can attack the turn it enters.", att=2, end=1, effect="haste")
 fire_elemental = SummonCard(name="Fire Elemental", generic_mana=3, sp_mana="red", description="Gains +1 attack when attacking.", att=3, end=2, effect="attack? inc att 1")
-dragon_whelp = SummonCard(name="Dragon Whelp", generic_mana=4, sp_mana="red", description="Flying.", att=2, end=3, effect="flying")
+dragon_whelp = SummonCard(name="Dragon Whelp", generic_mana=4, sp_mana="red", description="Flying. This baby dragon will grow to be quite terrifying.", att=2, end=3, effect="flying")
 berserker = SummonCard(name="Berserker", generic_mana=2, sp_mana="red", description="Gains +2 attack when attacking, but -1 endurance.", att=2, end=3, effect="attack? inc att 2; dec end 1")
 
 _universal_cards = [slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf, skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar,
