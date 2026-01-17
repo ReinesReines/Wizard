@@ -4,7 +4,7 @@ class EffectParser:
     """
     
     TRIGGERS = ['summon?', 'block?', 'attack?', 'tap?', 'enter?']
-    STATIC_ABILITIES = ['haste', 'flying', 'reach', 'entertap', 'unblockable', 'vigilant']
+    STATIC_ABILITIES = ['haste', 'flying', 'reach', 'entertap', 'unblockable', 'vigilant', 'trample']
     MODIFIERS = ['inc', 'dec']
     ACTIONS = ['gen', 'draw', 'discard', 'heal', 'return', 'count']
     PLACES = ['graveyard', 'deck']

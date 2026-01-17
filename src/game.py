@@ -1,10 +1,10 @@
 try:
     from .modules.cards import Cards, SummonCard, SpellCard, LandCards
-    from .modules.utils import execute_card, enters_tapped, card_has_trigger, get_all_keywords
+    from .modules.utils import execute_card, enters_tapped, card_has_ability, get_all_keywords
     from .card_index import *
 except:
     from modules.cards import Cards, SummonCard, SpellCard, LandCards
-    from modules.utils import execute_card, enters_tapped, card_has_trigger, get_all_keywords
+    from modules.utils import execute_card, enters_tapped, card_has_ability, get_all_keywords
     from card_index import *
 
 import random
@@ -108,8 +108,8 @@ class GameEngine:
             print(f"[{self._timestamp()}] Error: Card '{card.name}' is not a creature")
             return False
         
-        # Execute card effects
-        executed_card = execute_card(card, game_state)
+        # Execute card effects (pass player for graveyard counting)
+        executed_card = execute_card(card, game_state, player)
         
         # Check if card enters tapped
         if enters_tapped(executed_card):
@@ -123,7 +123,9 @@ class GameEngine:
         battlefield_entry = {
             "card": executed_card.to_dict(),
             "action": "attack",  # Default action
-            "summoning_sickness": not card_has_trigger(executed_card, "haste")
+            "summoning_sickness": not card_has_ability(executed_card, "haste"),
+            "base_attack": executed_card.attack,
+            "base_defence": executed_card.defence
         }
         
         # Add to player's creatures on battlefield
@@ -184,7 +186,7 @@ class GameEngine:
         game_state["phase"] = "untap"
         game_state["lands_played_this_turn"] = 0
         
-        print(f"\n[{self._timestamp()}] === TURN {game_state['turn_number']}: {player} ===\n")
+        print(f"[{self._timestamp()}] Turn {game_state['turn_number']}: {player}")
         
         self._save_state(game_state)
     
@@ -195,7 +197,7 @@ class GameEngine:
         if player not in game_state:
             return
         
-        print(f"[{self._timestamp()}] UNTAP STEP:")
+        print(f"[{self._timestamp()}] Permanents untapped")
         player_data = game_state[player]
         
         # Untap creatures and clear summoning sickness
@@ -222,7 +224,7 @@ class GameEngine:
         game_state = self._load_state()
         turn_number = game_state.get("turn_number", 1)
         
-        print(f"\n[{self._timestamp()}] DRAW STEP:")
+        print(f"[{self._timestamp()}] DRAW STEP:")
         
         # Skip first draw for starting player on turn 1
         if turn_number == 1 and player == self.player1:
@@ -238,7 +240,10 @@ class GameEngine:
         """Run cleanup, clear mana pool, shift to opponent."""
         game_state = self._load_state()
         
-        print(f"\n[{self._timestamp()}] END PHASE:")
+        print(f"[{self._timestamp()}] END PHASE:")
+        
+        # Clear temporary effects (attack triggers, etc.)
+        self.cleanup_temporary_effects()
         
         # Clear mana pool
         self.clear_mana_pool(player)
@@ -247,9 +252,10 @@ class GameEngine:
         game_state["phase"] = "end"
         game_state["lands_played_this_turn"] = 0
         
-        print(f"  [{self._timestamp()}] {player}'s turn ends\n")
+        print(f"  [{self._timestamp()}] {player}'s turn ends")
         
         self._save_state(game_state)
+        self.turn += 1
     
     def clear_mana_pool(self, player):
         """Reset all mana to 0."""
@@ -321,7 +327,7 @@ class GameEngine:
         self._save_state(game_state)
         return True
     
-    def tap_land(self, player, land_id):
+    def tap_land(self, player, land_id, color_choice=None):
         """Execute 'tap? gen [color]' effect, set tapped=1."""
         game_state = self._load_state()
         
@@ -358,9 +364,12 @@ class GameEngine:
             if "red" in effect:
                 colors.append("red")
             
-            # For dual lands, choose first color (can be enhanced later)
+            # Use color_choice if provided, otherwise use first color
             if colors:
-                color = colors[0]
+                if color_choice and color_choice in colors:
+                    color = color_choice
+                else:
+                    color = colors[0]
                 player_data[f"{color}_mana"] += 1
                 print(f"[{self._timestamp()}] {player} taps {land_data['card']['name']} for {color} → {color}_mana: {player_data[f'{color}_mana']}")
         
@@ -571,19 +580,37 @@ class GameEngine:
         
         creature_data = player_data["creatures"][creature_id_str]
         
-        # Check tapped
         if creature_data["card"]["tapped"] == 1:
             return False
         
-        # Check summoning sickness
         if creature_data.get("summoning_sickness", False):
             return False
         
         return True
+    
+    def cleanup_temporary_effects(self):
+        """Remove all temporary buffs at end of turn."""
+        game_state = self._load_state()
+        
+        for player in [self.player1, self.player2]:
+            for creature_id, creature_data in game_state[player]["creatures"].items():
+                card = creature_data["card"]
+                
+                # Restore to base stats (stored when creature entered)
+                base_attack = creature_data.get("base_attack")
+                base_defence = creature_data.get("base_defence")
+                
+                if base_attack is not None and base_defence is not None:
+                    old_defence = card["defence"]
+                    card["attack"] = base_attack
+                    card["defence"] = base_defence
+        
+        self._save_state(game_state)
 
     def calculate_combat_damage(self):
         """
         Build damage queue for all attackers and blockers.
+        Handles trample: assigns lethal damage to blockers, excess to player.
         Does NOT apply damage yet - that's done in resolve_damage_queue().
         """
         game_state = self._load_state()
@@ -608,23 +635,58 @@ class GameEngine:
             if attacker_id in blocks:
                 blocker_ids = blocks[attacker_id]
                 
+                # Check if attacker has trample
+                has_trample = "trample" in attacker_card.get("status", "").lower()
+                
                 if len(blocker_ids) == 1:
-                    # Single blocker: mutual damage
+                    # Single blocker: mutual damage (or trample)
                     blocker_id = blocker_ids[0]
                     blocker_data = game_state[opponent]["creatures"][blocker_id]
                     blocker_card = blocker_data["card"]
                     blocker_power = blocker_card["attack"]
+                    blocker_toughness = blocker_card["defence"]
                     
-                    # Queue damage: attacker to blocker, blocker to attacker
-                    damage_queue.append({
-                        "source": "creature",
-                        "source_id": attacker_id,
-                        "target": "creature",
-                        "target_id": blocker_id,
-                        "target_player": opponent,
-                        "damage": attacker_power
-                    })
+                    if has_trample:
+                        # Trample: assign lethal damage to blocker, excess to player
+                        lethal_damage = blocker_toughness
+                        damage_to_blocker = min(attacker_power, lethal_damage)
+                        trample_damage = max(0, attacker_power - lethal_damage)
+                        
+                        # Damage to blocker
+                        damage_queue.append({
+                            "source": "creature",
+                            "source_id": attacker_id,
+                            "target": "creature",
+                            "target_id": blocker_id,
+                            "target_player": opponent,
+                            "damage": damage_to_blocker
+                        })
+                        
+                        # Trample damage to player
+                        if trample_damage > 0:
+                            damage_queue.append({
+                                "source": "creature",
+                                "source_id": attacker_id,
+                                "target": "player",
+                                "target_player": opponent,
+                                "damage": trample_damage
+                            })
+                            print(f"  [{self._timestamp()}] {attacker_card['name']} deals {damage_to_blocker} to {blocker_card['name']}, {trample_damage} tramples to {opponent}")
+                        else:
+                            print(f"  [{self._timestamp()}] {attacker_card['name']} deals {damage_to_blocker} to {blocker_card['name']}")
+                    else:
+                        # No trample: all damage goes to blocker
+                        damage_queue.append({
+                            "source": "creature",
+                            "source_id": attacker_id,
+                            "target": "creature",
+                            "target_id": blocker_id,
+                            "target_player": opponent,
+                            "damage": attacker_power
+                        })
+                        print(f"  [{self._timestamp()}] {attacker_card['name']} deals {attacker_power} to {blocker_card['name']}")
                     
+                    # Blocker deals damage back to attacker
                     damage_queue.append({
                         "source": "creature", 
                         "source_id": blocker_id,
@@ -633,12 +695,10 @@ class GameEngine:
                         "target_player": current_player,
                         "damage": blocker_power
                     })
-                    
-                    print(f"  [{self._timestamp()}] {attacker_card['name']} deals {attacker_power} to {blocker_card['name']}")
                     print(f"  [{self._timestamp()}] {blocker_card['name']} deals {blocker_power} to {attacker_card['name']}")
                 
                 else:
-                    # Multiple blockers: attacker assigns damage, all blockers hit back
+                    # Multiple blockers: attacker assigns damage in order, all blockers hit back
                     remaining_damage = attacker_power
                     
                     for blocker_id in blocker_ids:
@@ -647,7 +707,7 @@ class GameEngine:
                         blocker_toughness = blocker_card["defence"]
                         blocker_power = blocker_card["attack"]
                         
-                        # Assign lethal damage first, then remaining
+                        # Assign lethal damage to this blocker, then move to next
                         assigned_damage = min(remaining_damage, blocker_toughness)
                         
                         if assigned_damage > 0:
@@ -672,6 +732,17 @@ class GameEngine:
                             "damage": blocker_power
                         })
                         print(f"  [{self._timestamp()}] {blocker_card['name']} deals {blocker_power} to {attacker_card['name']}")
+                    
+                    # Handle trample: excess damage goes to player
+                    if has_trample and remaining_damage > 0:
+                        damage_queue.append({
+                            "source": "creature",
+                            "source_id": attacker_id,
+                            "target": "player",
+                            "target_player": opponent,
+                            "damage": remaining_damage
+                        })
+                        print(f"  [{self._timestamp()}] {attacker_card['name']}: {remaining_damage} tramples to {opponent}")
             
             else:
                 # Unblocked attacker: damage opponent directly
@@ -1033,8 +1104,12 @@ class GameEngine:
         Execute a specific trigger effect on a creature.
         Parses and applies effects like 'attack? inc att 2; dec end 1'.
         """
-        from .modules.parser import EffectParser
-        from .modules.utils import execute_card
+        try:
+            from .modules.parser import EffectParser
+            from .modules.utils import execute_card
+        except:
+            from modules.parser import EffectParser
+            from modules.utils import execute_card
         
         game_state = self._load_state()
         

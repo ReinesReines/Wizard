@@ -82,8 +82,8 @@ alpha_wolf = SummonCard(name="Alpha Wolf", generic_mana=2, sp_mana="green", desc
 # Blue creatures
 skeleton = SummonCard(name="Skeleton", generic_mana=2, sp_mana="blue", description="Haste.\nGains +1 to endurance when blocking.", att=2, end=2, effect="haste; block? inc end 1")
 skeleton_army = SummonCard(name="Skeleton Army", generic_mana=3, sp_mana="blue", description="Gains +1 to attack for every skeleton in the graveyard.", att=2, end=2, effect="haste; inc att (graveyard count Skeleton)")
-phantom_warrior = SummonCard(name="Phantom Warrior", generic_mana=3, sp_mana="blue", description="Haste. This creature can attack instantly.", att=2, end=3, effect="haste")
-sea_serpent = SummonCard(name="Sea Serpent", generic_mana=4, sp_mana="blue", description="A powerful sea creature. It's very poisonous.|Ssssss", att=5, end=5, effect="")
+phantom_warrior = SummonCard(name="Phantom Warrior", generic_mana=3, sp_mana="blue", description="Reach. This creature can block flying creatures.", att=2, end=3, effect="reach")
+sea_serpent = SummonCard(name="Sea Serpent", generic_mana=4, sp_mana="blue", description="Trample. It's a powerful sea creature.|Ssssss", att=5, end=5, effect="trample")
 arcane_scholar = SummonCard(name="Arcane Scholar", generic_mana=2, sp_mana="blue", description="When this creature enters the battlefield, draw a card.|He is smart", att=1, end=3, effect="draw 1")
 vergil = SummonCard(name="Vergil", generic_mana=5, sp_mana="blue", description="The Storm that is Approaching. Cannot be blocked.|Deadbeat Dad", att=6, end=6, effect="unblockable")
 
@@ -91,8 +91,18 @@ vergil = SummonCard(name="Vergil", generic_mana=5, sp_mana="blue", description="
 goblin_raider = SummonCard(name="Goblin Raider", generic_mana=1, sp_mana="red", description="Haste. This creature can attack the turn it enters.", att=2, end=1, effect="haste")
 fire_elemental = SummonCard(name="Fire Elemental", generic_mana=3, sp_mana="red", description="Gains +1 attack when attacking.", att=3, end=2, effect="attack? inc att 1")
 dragon_whelp = SummonCard(name="Dragon Whelp", generic_mana=4, sp_mana="red", description="Flying. This baby dragon will grow to be quite terrifying.", att=2, end=3, effect="flying")
-berserker = SummonCard(name="Berserker", generic_mana=2, sp_mana="red", description="Gains +2 attack when attacking, but -1 endurance.", att=2, end=3, effect="attack? inc att 2; dec end 1")
+berserker = SummonCard(name="Berserker", generic_mana=2, sp_mana="red", description="Gains +2 attack when attacking, but -1 endurance.", att=2, end=3, effect="attack? inc att 2; attack? dec end 1")
 
-_universal_cards = [slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf, skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar,
-                    vergil, goblin_raider, fire_elemental, dragon_whelp, berserker]
-_land_cards = [forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands]
+# Collections for card_creator.py
+_universal_cards = [
+    # Green creatures
+    slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf,
+    # Blue creatures
+    skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar, vergil,
+    # Red creatures
+    goblin_raider, fire_elemental, dragon_whelp, berserker
+]
+
+_land_cards = [
+    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands
+]

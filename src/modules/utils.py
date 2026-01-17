@@ -73,7 +73,7 @@ def enters_tapped(card: Cards) -> bool:
 
 def get_all_keywords(card: Cards) -> list:
     """Extract all keyword abilities from a card's effect."""
-    keywords = ['haste', 'flying', 'reach', 'unblockable', 'vigilant', 'entertap']
+    keywords = ['haste', 'flying', 'reach', 'unblockable', 'vigilant', 'entertap', 'trample']
     return [kw for kw in keywords if card_has_ability(card, kw)]
 
 # ====================
@@ -91,11 +91,24 @@ def get_mana_colors(land_card: Cards) -> list:
     
     return list(set(colors))
 
+def is_dual_land(land_effect):
+    """Check if a land effect string represents a dual land (produces multiple mana types)."""
+    return "/" in land_effect
+
+def get_land_colors(land_effect):
+    if "gen" in land_effect:
+        colors_part = land_effect.split("gen ")[-1]
+
+        colors = colors_part.split("/")
+        return [color.strip() for color in colors]
+    
+    return []
+
 # ====================
 # EXECUTION ENGINE
 # ====================
 
-def execute_card(card: Cards, game_state=None):
+def execute_card(card: Cards, game_state=None, player=None):
     """
     Execute card effects and return modified card with computed values.
     """
@@ -118,7 +131,7 @@ def execute_card(card: Cards, game_state=None):
             value = inst.get('value')
             
             if isinstance(value, tuple):
-                value = _resolve_expression(value, game_state)
+                value = _resolve_expression(value, game_state, player)
             
             if field == 'att':
                 executed_card.attack += value
@@ -130,7 +143,7 @@ def execute_card(card: Cards, game_state=None):
             value = inst.get('value')
             
             if isinstance(value, tuple):
-                value = _resolve_expression(value, game_state)
+                value = _resolve_expression(value, game_state, player)
             
             if field == 'att':
                 executed_card.attack -= value
@@ -139,7 +152,7 @@ def execute_card(card: Cards, game_state=None):
     
     return executed_card
 
-def _resolve_expression(expr, game_state):
+def _resolve_expression(expr, game_state, player=None):
     """Resolve expression tuple like ('graveyard', 'count', 'Skeleton') to int value."""
     if not isinstance(expr, tuple) or len(expr) == 0:
         return 0
@@ -149,9 +162,9 @@ def _resolve_expression(expr, game_state):
         operation = expr[1]
         card_name = expr[2]
         
-        if operation == 'count' and game_state and place in game_state:
-            cards_in_place = game_state[place]
-            count = sum(1 for c in cards_in_place if hasattr(c, 'name') and c.name == card_name)
+        if operation == 'count' and game_state and player and player in game_state:
+            cards_in_place = game_state[player][place]
+            count = sum(1 for c in cards_in_place if isinstance(c, dict) and c.get('name') == card_name)
             return count
     
     return 0
@@ -194,3 +207,52 @@ def untap_all(cards: Cards) -> list:
         if hasattr(card, 'tapped'):
             card.status = 0
     return untapped
+
+# ====================
+# EXTRAS (idk where to put these)
+# ====================
+
+def global_buff(source: Cards, targets: list, game_state=None):
+    import copy
+    modified_cards = []
+
+    instructions = parse_card_effect(source)
+    
+    for target in targets:
+        if not isinstance(target, SummonCard):
+            continue
+            
+        modified_target = copy.deepcopy(target)
+        
+        for inst in instructions:
+            if inst.get('trigger'):
+                continue    # skip
+            action = inst.get('action')
+            
+            if action == 'inc':
+                field = inst.get('field')
+                value = inst.get('value')
+                
+                if isinstance(value, tuple):
+                    value = _resolve_expression(value, game_state)
+                
+                if field == 'att':
+                    modified_target.attack += value
+                elif field == 'end':
+                    modified_target.defence += value
+            
+            elif action == 'dec':
+                field = inst.get('field')
+                value = inst.get('value')
+                
+                if isinstance(value, tuple):
+                    value = _resolve_expression(value, game_state)
+                
+                if field == 'att':
+                    modified_target.attack -= value
+                elif field == 'end':
+                    modified_target.defence -= value
+        
+            modified_cards.append(modified_target)
+    
+    return modified_cards

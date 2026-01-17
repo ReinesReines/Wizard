@@ -2,20 +2,90 @@
     "Player1": {
         "deck": [
             {
-                "id": "60",
-                "name": "Vine Elemental",
-                "generic_mana": 3,
+                "id": "35",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen blue"
+            },
+            {
+                "id": "32",
+                "name": "Mountain",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one red mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen red"
+            },
+            {
+                "id": "5",
+                "name": "Bigger Slime",
+                "generic_mana": 2,
                 "sp_mana": "green",
                 "type": "Creature",
-                "description": "Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie",
+                "description": "Attacking doesn't cause this creature to tap.|It's a bigger slime.",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 3,
+                "effect": "vigilant"
+            },
+            {
+                "id": "17",
+                "name": "Berserker",
+                "generic_mana": 2,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +2 attack when attacking, but -1 endurance.",
                 "tapped": 0,
                 "status": "",
                 "attack": 2,
                 "defence": 3,
-                "effect": "enter? inc att 1; enter? inc end 1"
+                "effect": "attack? inc att 2; attack? dec end 1"
             },
             {
-                "id": "68",
+                "id": "38",
+                "name": "Mountain",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one red mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen red"
+            },
+            {
+                "id": "16",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "37",
+                "name": "Fire Elemental",
+                "generic_mana": 3,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +1 attack when attacking.",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 2,
+                "effect": "attack? inc att 1"
+            },
+            {
+                "id": "36",
                 "name": "Island",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -26,7 +96,92 @@
                 "effect": "tap? gen blue"
             },
             {
-                "id": "68",
+                "id": "9",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "27",
+                "name": "Forest Bear",
+                "generic_mana": 1,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 2,
+                "effect": ""
+            },
+            {
+                "id": "20",
+                "name": "Skeleton",
+                "generic_mana": 2,
+                "sp_mana": "blue",
+                "type": "Creature",
+                "description": "Haste.\nGains +1 to endurance when blocking.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 2,
+                "effect": "haste; block? inc end 1"
+            },
+            {
+                "id": "1",
+                "name": "Fire Elemental",
+                "generic_mana": 3,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +1 attack when attacking.",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 2,
+                "effect": "attack? inc att 1"
+            },
+            {
+                "id": "33",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "19",
+                "name": "Mountain",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one red mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen red"
+            },
+            {
+                "id": "23",
+                "name": "Fire Elemental",
+                "generic_mana": 3,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +1 attack when attacking.",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 2,
+                "effect": "attack? inc att 1"
+            },
+            {
+                "id": "6",
                 "name": "Island",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -37,7 +192,20 @@
                 "effect": "tap? gen blue"
             },
             {
-                "id": "45",
+                "id": "15",
+                "name": "Phantom Warrior",
+                "generic_mana": 3,
+                "sp_mana": "blue",
+                "type": "Creature",
+                "description": "Reach. This creature can block flying creatures.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 3,
+                "effect": "reach"
+            },
+            {
+                "id": "31",
                 "name": "Goblin Raider",
                 "generic_mana": 1,
                 "sp_mana": "red",
@@ -50,31 +218,20 @@
                 "effect": "haste"
             },
             {
-                "id": "55",
-                "name": "Phantom Warrior",
+                "id": "12",
+                "name": "Fire Elemental",
                 "generic_mana": 3,
-                "sp_mana": "blue",
+                "sp_mana": "red",
                 "type": "Creature",
-                "description": "Haste. This creature can attack instantly.",
+                "description": "Gains +1 attack when attacking.",
                 "tapped": 0,
                 "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "haste"
+                "attack": 3,
+                "defence": 2,
+                "effect": "attack? inc att 1"
             },
             {
-                "id": "56",
-                "name": "Forest",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one green mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen green"
-            },
-            {
-                "id": "66",
+                "id": "28",
                 "name": "Tropical Grove",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -85,59 +242,7 @@
                 "effect": "entertap; tap? gen green/blue"
             },
             {
-                "id": "67",
-                "name": "Fire Elemental",
-                "generic_mana": 3,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Gains +1 attack when attacking.",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 2,
-                "effect": "attack? inc att 1"
-            },
-            {
-                "id": "45",
-                "name": "Goblin Raider",
-                "generic_mana": 1,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Haste. This creature can attack the turn it enters.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 1,
-                "effect": "haste"
-            },
-            {
-                "id": "62",
-                "name": "Arcane Scholar",
-                "generic_mana": 2,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "When this creature enters the battlefield, draw a card.|He is smart",
-                "tapped": 0,
-                "status": "",
-                "attack": 1,
-                "defence": 3,
-                "effect": "draw 1"
-            },
-            {
-                "id": "63",
-                "name": "Dragon Whelp",
-                "generic_mana": 4,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Flying. This baby dragon will grow to be quite terrifying.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "flying"
-            },
-            {
-                "id": "57",
+                "id": "8",
                 "name": "Bigger Slime",
                 "generic_mana": 2,
                 "sp_mana": "green",
@@ -150,57 +255,7 @@
                 "effect": "vigilant"
             },
             {
-                "id": "50",
-                "name": "Mountain",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one red mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen red"
-            },
-            {
-                "id": "60",
-                "name": "Vine Elemental",
-                "generic_mana": 3,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "enter? inc att 1; enter? inc end 1"
-            },
-            {
-                "id": "62",
-                "name": "Arcane Scholar",
-                "generic_mana": 2,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "When this creature enters the battlefield, draw a card.|He is smart",
-                "tapped": 0,
-                "status": "",
-                "attack": 1,
-                "defence": 3,
-                "effect": "draw 1"
-            },
-            {
-                "id": "59",
-                "name": "Berserker",
-                "generic_mana": 2,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Gains +2 attack when attacking, but -1 endurance.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "attack? inc att 2; dec end 1"
-            },
-            {
-                "id": "68",
+                "id": "10",
                 "name": "Island",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -211,20 +266,20 @@
                 "effect": "tap? gen blue"
             },
             {
-                "id": "54",
-                "name": "Skeleton",
-                "generic_mana": 2,
-                "sp_mana": "blue",
+                "id": "18",
+                "name": "Slime",
+                "generic_mana": 1,
+                "sp_mana": "green",
                 "type": "Creature",
-                "description": "Haste.\nGains +1 to endurance when blocking.",
+                "description": "Attacking doesn't cause this creature to tap.",
                 "tapped": 0,
                 "status": "",
                 "attack": 2,
                 "defence": 2,
-                "effect": "haste; block? inc end 1"
+                "effect": "vigilant"
             },
             {
-                "id": "63",
+                "id": "30",
                 "name": "Dragon Whelp",
                 "generic_mana": 4,
                 "sp_mana": "red",
@@ -237,85 +292,7 @@
                 "effect": "flying"
             },
             {
-                "id": "64",
-                "name": "Alpha Wolf",
-                "generic_mana": 2,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Other creatures you control get +1 attack.|Sorry, you're not a sigma",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 2,
-                "effect": "global inc att 1"
-            },
-            {
-                "id": "57",
-                "name": "Bigger Slime",
-                "generic_mana": 2,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.|It's a bigger slime.",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 3,
-                "effect": "vigilant"
-            },
-            {
-                "id": "64",
-                "name": "Alpha Wolf",
-                "generic_mana": 2,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Other creatures you control get +1 attack.|Sorry, you're not a sigma",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 2,
-                "effect": "global inc att 1"
-            },
-            {
-                "id": "65",
-                "name": "Forest Bear",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": ""
-            },
-            {
-                "id": "65",
-                "name": "Forest Bear",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": ""
-            },
-            {
-                "id": "38",
-                "name": "Slime",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": "vigilant"
-            },
-            {
-                "id": "54",
+                "id": "14",
                 "name": "Skeleton",
                 "generic_mana": 2,
                 "sp_mana": "blue",
@@ -328,33 +305,7 @@
                 "effect": "haste; block? inc end 1"
             },
             {
-                "id": "56",
-                "name": "Forest",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one green mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen green"
-            }
-        ],
-        "hand": {
-            "55": {
-                "id": "55",
-                "name": "Phantom Warrior",
-                "generic_mana": 3,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "Haste. This creature can attack instantly.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "haste"
-            },
-            "46": {
-                "id": "46",
+                "id": "11",
                 "name": "Volcanic Peak",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -364,8 +315,21 @@
                 "status": "",
                 "effect": "entertap; tap? gen red/blue"
             },
-            "50": {
-                "id": "50",
+            {
+                "id": "22",
+                "name": "Forest Bear",
+                "generic_mana": 1,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 2,
+                "effect": ""
+            },
+            {
+                "id": "4",
                 "name": "Mountain",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -375,86 +339,196 @@
                 "status": "",
                 "effect": "tap? gen red"
             },
-            "38": {
-                "id": "38",
-                "name": "Slime",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.",
+            {
+                "id": "13",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
                 "tapped": 0,
                 "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": "vigilant"
+                "effect": "tap? gen blue"
             },
-            "59": {
-                "id": "59",
-                "name": "Berserker",
-                "generic_mana": 2,
-                "sp_mana": "red",
+            {
+                "id": "24",
+                "name": "Mountain",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one red mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen red"
+            },
+            {
+                "id": "25",
+                "name": "Tropical Grove",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Enters the battlefield tapped.|Tap to add one green or blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "entertap; tap? gen green/blue"
+            }
+        ],
+        "hand": {
+            "26": {
+                "id": "26",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            "34": {
+                "id": "34",
+                "name": "Phantom Warrior",
+                "generic_mana": 3,
+                "sp_mana": "blue",
                 "type": "Creature",
-                "description": "Gains +2 attack when attacking, but -1 endurance.",
+                "description": "Reach. This creature can block flying creatures.",
                 "tapped": 0,
                 "status": "",
                 "attack": 2,
                 "defence": 3,
-                "effect": "attack? inc att 2; dec end 1"
+                "effect": "reach"
             },
-            "67": {
-                "id": "67",
-                "name": "Fire Elemental",
-                "generic_mana": 3,
-                "sp_mana": "red",
+            "3": {
+                "id": "3",
+                "name": "Bigger Slime",
+                "generic_mana": 2,
+                "sp_mana": "green",
                 "type": "Creature",
-                "description": "Gains +1 attack when attacking.",
+                "description": "Attacking doesn't cause this creature to tap.|It's a bigger slime.",
                 "tapped": 0,
                 "status": "",
                 "attack": 3,
+                "defence": 3,
+                "effect": "vigilant"
+            },
+            "29": {
+                "id": "29",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            "2": {
+                "id": "2",
+                "name": "Volcanic Peak",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Enters the battlefield tapped.|Tap to add one red or blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "entertap; tap? gen red/blue"
+            },
+            "21": {
+                "id": "21",
+                "name": "Skeleton",
+                "generic_mana": 2,
+                "sp_mana": "blue",
+                "type": "Creature",
+                "description": "Haste.\nGains +1 to endurance when blocking.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
                 "defence": 2,
-                "effect": "attack? inc att 1"
+                "effect": "haste; block? inc end 1"
+            },
+            "7": {
+                "id": "7",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen blue"
             }
         },
         "graveyard": [],
         "health": 20,
-        "creatures": {},
-        "lands": {
-            "56": {
+        "creatures": {
+            "1000": {
                 "card": {
-                    "id": "56",
-                    "name": "Forest",
-                    "generic_mana": 0,
-                    "sp_mana": "",
-                    "type": "Land",
-                    "description": "Tap to add one green mana.",
-                    "tapped": 0,
-                    "status": "",
-                    "effect": "tap? gen green"
-                }
+                    "id": "1000",
+                    "name": "Sea Serpent",
+                    "generic_mana": 4,
+                    "sp_mana": "blue",
+                    "type": "Creature",
+                    "description": "Trample. It's a powerful sea creature.|Ssssss",
+                    "tapped": 1,
+                    "status": "trample",
+                    "attack": 5,
+                    "defence": 1,
+                    "effect": "trample"
+                },
+                "action": "attack",
+                "summoning_sickness": false,
+                "base_attack": 5,
+                "base_defence": 5
             }
         },
+        "lands": {},
         "blue_mana": 0,
         "red_mana": 0,
         "green_mana": 0,
-        "queue": {}
+        "queue": {},
+        "mana_pool": {
+            "blue": 10
+        }
     },
     "Player2": {
         "deck": [
             {
                 "id": "55",
-                "name": "Phantom Warrior",
-                "generic_mana": 3,
-                "sp_mana": "blue",
+                "name": "Mountain",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one red mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen red"
+            },
+            {
+                "id": "63",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "64",
+                "name": "Goblin Raider",
+                "generic_mana": 1,
+                "sp_mana": "red",
                 "type": "Creature",
-                "description": "Haste. This creature can attack instantly.",
+                "description": "Haste. This creature can attack the turn it enters.",
                 "tapped": 0,
                 "status": "",
                 "attack": 2,
-                "defence": 3,
+                "defence": 1,
                 "effect": "haste"
             },
             {
-                "id": "68",
+                "id": "72",
                 "name": "Island",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -465,7 +539,18 @@
                 "effect": "tap? gen blue"
             },
             {
-                "id": "59",
+                "id": "70",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen blue"
+            },
+            {
+                "id": "40",
                 "name": "Berserker",
                 "generic_mana": 2,
                 "sp_mana": "red",
@@ -475,49 +560,10 @@
                 "status": "",
                 "attack": 2,
                 "defence": 3,
-                "effect": "attack? inc att 2; dec end 1"
+                "effect": "attack? inc att 2; attack? dec end 1"
             },
             {
-                "id": "59",
-                "name": "Berserker",
-                "generic_mana": 2,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Gains +2 attack when attacking, but -1 endurance.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "attack? inc att 2; dec end 1"
-            },
-            {
-                "id": "54",
-                "name": "Skeleton",
-                "generic_mana": 2,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "Haste.\nGains +1 to endurance when blocking.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": "haste; block? inc end 1"
-            },
-            {
-                "id": "67",
-                "name": "Fire Elemental",
-                "generic_mana": 3,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Gains +1 attack when attacking.",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 2,
-                "effect": "attack? inc att 1"
-            },
-            {
-                "id": "60",
+                "id": "68",
                 "name": "Vine Elemental",
                 "generic_mana": 3,
                 "sp_mana": "green",
@@ -530,7 +576,332 @@
                 "effect": "enter? inc att 1; enter? inc end 1"
             },
             {
-                "id": "46",
+                "id": "39",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen blue"
+            },
+            {
+                "id": "60",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "61",
+                "name": "Slime",
+                "generic_mana": 1,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "Attacking doesn't cause this creature to tap.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 2,
+                "effect": "vigilant"
+            },
+            {
+                "id": "49",
+                "name": "Tropical Grove",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Enters the battlefield tapped.|Tap to add one green or blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "entertap; tap? gen green/blue"
+            },
+            {
+                "id": "53",
+                "name": "Bigger Slime",
+                "generic_mana": 2,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "Attacking doesn't cause this creature to tap.|It's a bigger slime.",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 3,
+                "effect": "vigilant"
+            },
+            {
+                "id": "73",
+                "name": "Berserker",
+                "generic_mana": 2,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +2 attack when attacking, but -1 endurance.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 3,
+                "effect": "attack? inc att 2; attack? dec end 1"
+            },
+            {
+                "id": "65",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "47",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "76",
+                "name": "Forest Bear",
+                "generic_mana": 1,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 2,
+                "effect": ""
+            },
+            {
+                "id": "57",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen blue"
+            },
+            {
+                "id": "71",
+                "name": "Phantom Warrior",
+                "generic_mana": 3,
+                "sp_mana": "blue",
+                "type": "Creature",
+                "description": "Reach. This creature can block flying creatures.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 3,
+                "effect": "reach"
+            },
+            {
+                "id": "43",
+                "name": "Arcane Scholar",
+                "generic_mana": 2,
+                "sp_mana": "blue",
+                "type": "Creature",
+                "description": "When this creature enters the battlefield, draw a card.|He is smart",
+                "tapped": 0,
+                "status": "",
+                "attack": 1,
+                "defence": 3,
+                "effect": "draw 1"
+            },
+            {
+                "id": "41",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "67",
+                "name": "Vine Elemental",
+                "generic_mana": 3,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 3,
+                "effect": "enter? inc att 1; enter? inc end 1"
+            },
+            {
+                "id": "52",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "74",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "42",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            {
+                "id": "45",
+                "name": "Alpha Wolf",
+                "generic_mana": 2,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "Other creatures you control get +1 attack.|Sorry, you're not a sigma",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 2,
+                "effect": "global inc att 1"
+            },
+            {
+                "id": "59",
+                "name": "Forest Bear",
+                "generic_mana": 1,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 2,
+                "effect": ""
+            },
+            {
+                "id": "56",
+                "name": "Dragon Whelp",
+                "generic_mana": 4,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Flying. This baby dragon will grow to be quite terrifying.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 3,
+                "effect": "flying"
+            },
+            {
+                "id": "58",
+                "name": "Tropical Grove",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Enters the battlefield tapped.|Tap to add one green or blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "entertap; tap? gen green/blue"
+            },
+            {
+                "id": "62",
+                "name": "Fire Elemental",
+                "generic_mana": 3,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +1 attack when attacking.",
+                "tapped": 0,
+                "status": "",
+                "attack": 3,
+                "defence": 2,
+                "effect": "attack? inc att 1"
+            },
+            {
+                "id": "51",
+                "name": "Berserker",
+                "generic_mana": 2,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Gains +2 attack when attacking, but -1 endurance.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 3,
+                "effect": "attack? inc att 2; attack? dec end 1"
+            },
+            {
+                "id": "66",
+                "name": "Island",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one blue mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen blue"
+            }
+        ],
+        "hand": {
+            "54": {
+                "id": "54",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            "69": {
+                "id": "69",
+                "name": "Arcane Scholar",
+                "generic_mana": 2,
+                "sp_mana": "blue",
+                "type": "Creature",
+                "description": "When this creature enters the battlefield, draw a card.|He is smart",
+                "tapped": 0,
+                "status": "",
+                "attack": 1,
+                "defence": 3,
+                "effect": "draw 1"
+            },
+            "75": {
+                "id": "75",
+                "name": "Forest",
+                "generic_mana": 0,
+                "sp_mana": "",
+                "type": "Land",
+                "description": "Tap to add one green mana.",
+                "tapped": 0,
+                "status": "",
+                "effect": "tap? gen green"
+            },
+            "50": {
+                "id": "50",
                 "name": "Volcanic Peak",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -540,106 +911,8 @@
                 "status": "",
                 "effect": "entertap; tap? gen red/blue"
             },
-            {
-                "id": "50",
-                "name": "Mountain",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one red mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen red"
-            },
-            {
-                "id": "65",
-                "name": "Forest Bear",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": ""
-            },
-            {
-                "id": "62",
-                "name": "Arcane Scholar",
-                "generic_mana": 2,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "When this creature enters the battlefield, draw a card.|He is smart",
-                "tapped": 0,
-                "status": "",
-                "attack": 1,
-                "defence": 3,
-                "effect": "draw 1"
-            },
-            {
-                "id": "38",
-                "name": "Slime",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": "vigilant"
-            },
-            {
-                "id": "63",
-                "name": "Dragon Whelp",
-                "generic_mana": 4,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Flying. This baby dragon will grow to be quite terrifying.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "flying"
-            },
-            {
-                "id": "56",
-                "name": "Forest",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one green mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen green"
-            },
-            {
-                "id": "45",
-                "name": "Goblin Raider",
-                "generic_mana": 1,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Haste. This creature can attack the turn it enters.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 1,
-                "effect": "haste"
-            },
-            {
-                "id": "50",
-                "name": "Mountain",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one red mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen red"
-            },
-            {
-                "id": "64",
+            "48": {
+                "id": "48",
                 "name": "Alpha Wolf",
                 "generic_mana": 2,
                 "sp_mana": "green",
@@ -651,47 +924,21 @@
                 "defence": 2,
                 "effect": "global inc att 1"
             },
-            {
-                "id": "38",
-                "name": "Slime",
-                "generic_mana": 1,
+            "44": {
+                "id": "44",
+                "name": "Alpha Wolf",
+                "generic_mana": 2,
                 "sp_mana": "green",
                 "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.",
+                "description": "Other creatures you control get +1 attack.|Sorry, you're not a sigma",
                 "tapped": 0,
                 "status": "",
-                "attack": 2,
+                "attack": 3,
                 "defence": 2,
-                "effect": "vigilant"
+                "effect": "global inc att 1"
             },
-            {
-                "id": "62",
-                "name": "Arcane Scholar",
-                "generic_mana": 2,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "When this creature enters the battlefield, draw a card.|He is smart",
-                "tapped": 0,
-                "status": "",
-                "attack": 1,
-                "defence": 3,
-                "effect": "draw 1"
-            },
-            {
-                "id": "54",
-                "name": "Skeleton",
-                "generic_mana": 2,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "Haste.\nGains +1 to endurance when blocking.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": "haste; block? inc end 1"
-            },
-            {
-                "id": "56",
+            "46": {
+                "id": "46",
                 "name": "Forest",
                 "generic_mana": 0,
                 "sp_mana": "",
@@ -700,172 +947,59 @@
                 "tapped": 0,
                 "status": "",
                 "effect": "tap? gen green"
+            }
+        },
+        "graveyard": [
+            {
+                "id": "2001",
+                "name": "Slime",
+                "generic_mana": 1,
+                "sp_mana": "green",
+                "type": "Creature",
+                "description": "Attacking doesn't cause this creature to tap.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 0,
+                "effect": "vigilant"
+            },
+            {
+                "id": "2002",
+                "name": "Goblin Raider",
+                "generic_mana": 1,
+                "sp_mana": "red",
+                "type": "Creature",
+                "description": "Haste. This creature can attack the turn it enters.",
+                "tapped": 0,
+                "status": "",
+                "attack": 2,
+                "defence": 0,
+                "effect": "haste"
             }
         ],
-        "hand": {
-            "2": {
-                "id": "67",
-                "name": "Fire Elemental",
-                "generic_mana": 3,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Gains +1 attack when attacking.",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 2,
-                "effect": "attack? inc att 1"
-            },
-            "3": {
-                "id": "57",
-                "name": "Bigger Slime",
-                "generic_mana": 2,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.|It's a bigger slime.",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 3,
-                "effect": "vigilant"
-            },
-            "4": {
-                "id": "60",
-                "name": "Vine Elemental",
-                "generic_mana": 3,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "enter? inc att 1; enter? inc end 1"
-            },
-            "5": {
-                "id": "65",
-                "name": "Forest Bear",
-                "generic_mana": 1,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "A powerful bear from the deep forest.|Why does he look like a dog",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 2,
-                "effect": ""
-            },
-            "6": {
-                "id": "63",
-                "name": "Dragon Whelp",
-                "generic_mana": 4,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Flying. This baby dragon will grow to be quite terrifying.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "flying"
-            },
-            "7": {
-                "id": "55",
-                "name": "Phantom Warrior",
-                "generic_mana": 3,
-                "sp_mana": "blue",
-                "type": "Creature",
-                "description": "Haste. This creature can attack instantly.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 3,
-                "effect": "haste"
-            },
-            "45": {
-                "id": "45",
-                "name": "Goblin Raider",
-                "generic_mana": 1,
-                "sp_mana": "red",
-                "type": "Creature",
-                "description": "Haste. This creature can attack the turn it enters.",
-                "tapped": 0,
-                "status": "",
-                "attack": 2,
-                "defence": 1,
-                "effect": "haste"
-            },
-            "56": {
-                "id": "56",
-                "name": "Forest",
-                "generic_mana": 0,
-                "sp_mana": "",
-                "type": "Land",
-                "description": "Tap to add one green mana.",
-                "tapped": 0,
-                "status": "",
-                "effect": "tap? gen green"
-            },
-            "57": {
-                "id": "57",
-                "name": "Bigger Slime",
-                "generic_mana": 2,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Attacking doesn't cause this creature to tap.|It's a bigger slime.",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 3,
-                "effect": "vigilant"
-            },
-            "64": {
-                "id": "64",
-                "name": "Alpha Wolf",
-                "generic_mana": 2,
-                "sp_mana": "green",
-                "type": "Creature",
-                "description": "Other creatures you control get +1 attack.|Sorry, you're not a sigma",
-                "tapped": 0,
-                "status": "",
-                "attack": 3,
-                "defence": 2,
-                "effect": "global inc att 1"
-            }
-        },
-        "graveyard": [],
-        "health": 20,
+        "health": 18,
         "creatures": {},
-        "lands": {
-            "1": {
-                "card": {
-                    "id": "66",
-                    "name": "Tropical Grove",
-                    "generic_mana": 0,
-                    "sp_mana": "",
-                    "type": "Land",
-                    "description": "Enters the battlefield tapped.|Tap to add one green or blue mana.",
-                    "tapped": 0,
-                    "status": "",
-                    "effect": "entertap; tap? gen green/blue"
-                },
-                "tapped": 1
-            }
-        },
+        "lands": {},
         "blue_mana": 0,
         "red_mana": 0,
         "green_mana": 0,
         "queue": {}
     },
     "battlefield": {},
-    "turn_number": 6,
+    "turn_number": 1,
     "current_player": "Player1",
-    "phase": "main_pre",
+    "phase": "upkeep",
     "lands_played_this_turn": 0,
     "combat": {
-        "attackers": [],
-        "blocks": {},
+        "attackers": [
+            "1000"
+        ],
+        "blocks": {
+            "1000": [
+                "2001",
+                "2002"
+            ]
+        },
         "damage_queue": []
-    },
-    "active_player": "Player2",
-    "turn": 2
+    }
 }
