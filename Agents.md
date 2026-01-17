@@ -525,8 +525,9 @@ The test script will:
 
 ```
 Wizard/
+├── main.py                  # Interactive CLI game (15 commands)
 ├── src/
-│   ├── game.py              # Main GameEngine class
+│   ├── game.py              # Main GameEngine class (665+ lines)
 │   ├── card_index.py        # All card definitions + syntax docs
 │   ├── modules/
 │   │   ├── cards.py         # Card classes (SummonCard, LandCards, etc.)
@@ -541,25 +542,120 @@ Wizard/
 │   └── temp.py             # Effect parser testing
 ├── db/
 │   └── game_state.json     # Persistent game state
-└── Agents.md               # This file
+└── Agents.md               # This file (design doc + progress)
 ```
 
 ---
 
-## Next Steps
+## Implementation Status
 
-1. Implement Phase 1 functions (core game loop)
-2. Test basic turn progression
-3. Add combat system (Phase 2)
-4. Test combat with simple creatures
-5. Add trigger system (Phase 3)
-6. Test complex cards (Berserker, Alpha Wolf, Skeleton Army)
-7. Implement sorcery system (Phase 4)
-8. Add parser actions for sorceries (damage, destroy, discard, heal)
-9. Test sorcery cards (Lightning Strike, Divination, etc.)
+### ✅ COMPLETED (Phase 1 & 2 Partial)
+
+**Core Game Loop (Phase 1):**
+- ✅ `draw_card()`, `start_turn()`, `end_turn()`, `untap_step()` - Full turn management
+- ✅ `play_land()`, `tap_land()`, `clear_mana_pool()` - Complete mana system  
+- ✅ `check_mana_cost()`, `pay_mana()` - Mana validation and payment
+- ✅ Turn progression without combat - All phases working
+- ✅ JSON game state persistence - Load/save with `_load_state()`, `_save_state()`
+
+**Card System:**
+- ✅ `to_dict()` methods for all card classes - Full JSON serialization
+- ✅ `_reconstruct_card()` - Hydrate objects from JSON (Creature, Land, Spell support)
+- ✅ Card ID system - String-based IDs for consistent JSON handling
+
+**Combat System (Phase 2 - Partial):**
+- ✅ `declare_attackers()`, `declare_blockers()` - Combat declarations working
+- ✅ `can_attack()`, `can_block()` - Attack/block validation
+- ✅ Summoning sickness tracking - Correctly clears at untap for ALL creatures
+- ✅ Vigilant creatures - Don't tap when attacking
+- ❌ `calculate_combat_damage()`, `resolve_damage_queue()` - **NOT IMPLEMENTED**
+- ❌ `check_creature_deaths()` - **NOT IMPLEMENTED**
+
+**Interactive CLI (main.py):**
+- ✅ 15 commands: `start`, `untap`, `draw`, `end`, `land`, `tap`, `play`, `attack`, `block`, `hand`, `board`, `state`, `switch`, `help`, `quit`
+- ✅ `mana <color> <amount>` - Debug command for testing cards
+- ✅ Opening hands - 7 cards each player  
+- ✅ Draw restriction - Once per turn with `drew_this_turn` flag
+- ✅ Game state display functions - `show_hand()`, `show_battlefield()`, `show_game_state()`
+
+**Rules Implementation:**
+- ✅ MTG turn structure - Untap → Upkeep → Draw → Main → Combat → End
+- ✅ Mana system - 3 colors (red/blue/green), generic costs, dual lands
+- ✅ Summoning sickness - Creatures can't attack turn they enter (unless haste)
+- ✅ Keywords - `haste`, `vigilant`, `flying`, `reach`, `unblockable`, `entertap`
+
+### ❌ PENDING (Phase 2 & 3)
+
+**Combat Resolution (Phase 2):**
+- ❌ Damage calculation and simultaneous resolution
+- ❌ Creature death and graveyard management
+- ❌ Flying/reach blocking restrictions  
+- ❌ Multiple blocker damage assignment
+- ❌ Win condition checking (health ≤ 0)
+
+**Trigger System (Phase 3):**
+- ❌ `check_enter_triggers()`, `check_attack_triggers()`, `check_block_triggers()`
+- ❌ Effect resolution when triggers occur
+- ❌ Cross-creature effects (Vine Elemental's `enter?` won't work)
+- ❌ Temporary buff tracking and cleanup
+- ❌ Global effects (Alpha Wolf)
+- ❌ Graveyard counting (Skeleton Army)
+
+**Advanced Features (Phase 4):**
+- ❌ Sorcery system - `cast_sorcery()`, spell resolution
+- ❌ Sorcery effects - `deal_damage()`, `destroy_creature()`, `force_discard()`
+- ❌ Enter-the-battlefield immediate effects
+- ❌ Win condition checking and game end
+
+### 🚧 CURRENT LIMITATIONS
+
+1. **Combat doesn't resolve damage** - You can attack/block but no damage is dealt
+2. **No creature deaths** - Creatures stay on battlefield regardless of damage
+3. **Triggers don't fire** - `enter?`, `attack?`, `block?` effects are parsed but not executed
+4. **No sorceries** - Can't cast instant spells
+5. **No win condition** - Game continues indefinitely
 
 ---
 
-**Version:** 1.0  
-**Last Updated:** January 16, 2026  
-**Status:** Design complete, ready for implementation
+## Changelog
+
+### v1.1 - January 17, 2026
+- **ADDED:** Interactive CLI game (`main.py`) with 15 commands
+- **ADDED:** `mana <color> <amount>` debug command for testing
+- **ADDED:** Opening hands (7 cards each) and draw restrictions
+- **ADDED:** Block command with simple syntax (`block <attacker_id> <blocker_id>`)
+- **FIXED:** Summoning sickness now clears for ALL creatures at untap (not just tapped)
+- **FIXED:** Vigilant creatures don't tap when attacking
+- **FIXED:** `_reconstruct_card()` supports `LandCards`
+- **FIXED:** Card serialization with `to_dict()` methods
+- **STATUS:** Core gameplay loop working, combat declarations work, damage resolution needed
+
+### v1.0 - January 16, 2026
+- **CREATED:** Initial design document
+- **DEFINED:** MTG rules implementation, card list, effect parser syntax
+- **PLANNED:** 4-phase implementation roadmap
+- **STATUS:** Design complete, ready for implementation
+
+---
+
+## Next Priority
+
+### Phase 2 Completion: Combat Resolution
+1. **CRITICAL:** Implement `calculate_combat_damage()` and `resolve_damage_queue()`
+2. **CRITICAL:** Add `check_creature_deaths()` and graveyard movement
+3. Test combat with creature death scenarios
+4. Add flying/reach blocking restrictions
+
+### Phase 3: Trigger System  
+1. Implement `check_enter_triggers()` for Vine Elemental
+2. Add `check_attack_triggers()` for Fire Elemental, Berserker
+3. Add `check_block_triggers()` for Skeleton
+4. Test cross-creature effects and temporary buffs
+
+**Current Focus:** Combat damage resolution is blocking all real gameplay testing.
+
+---
+
+**Version:** 1.1  
+**Last Updated:** January 17, 2026  
+**Status:** Core gameplay implemented, combat resolution needed

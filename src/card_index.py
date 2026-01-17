@@ -76,7 +76,7 @@ wild_highlands = LandCards(name="Wild Highlands", generic_mana=0, sp_mana="", de
 slime = SummonCard(name="Slime", generic_mana=1, sp_mana="green", description="Attacking doesn't cause this creature to tap.", att=2, end=2, effect="vigilant")
 bigger_slime = SummonCard(name="Bigger Slime", generic_mana=2, sp_mana="green", description="Attacking doesn't cause this creature to tap.|It's a bigger slime.", att=3, end=3, effect="vigilant")
 forest_bear = SummonCard(name="Forest Bear", generic_mana=1, sp_mana="green", description="A powerful bear from the deep forest.|Why does he look like a dog", att=2, end=2, effect="")
-vine_elemental = SummonCard(name="Vine Elemental", generic_mana=3, sp_mana="green", description="Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie", att=2, end=3, effect="enter? inc att 1; inc end 1")
+vine_elemental = SummonCard(name="Vine Elemental", generic_mana=3, sp_mana="green", description="Gains +1/+1 when another creature enters the battlefield.|Looks like he's mid boogie", att=2, end=3, effect="enter? inc att 1; enter? inc end 1")
 alpha_wolf = SummonCard(name="Alpha Wolf", generic_mana=2, sp_mana="green", description="Other creatures you control get +1 attack.|Sorry, you're not a sigma", att=3, end=2, effect="global inc att 1")
 
 # Blue creatures
