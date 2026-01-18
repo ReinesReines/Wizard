@@ -55,6 +55,14 @@ class Wizard:
             self.game.draw_card(p1)
             self.game.draw_card(p2)
 
+        self.action_queue = []
+        self.combat_phase = None
+        self.priority_player = None
+        self.pending_attackers = []
+        self.pending_blocks = {}
+        self.combat_attacker = None
+        self.combat_defender = None
+
     def current_player(self):
         state = self.game.get_game_state()
         return state["current_player"]
@@ -71,6 +79,7 @@ class Wizard:
         state = self.game.get_game_state()
         player = state["current_player"]
         
+        self.game.clear_mana_pool(player)
         self.game.untap_step(player)
 
         if not (current_turn == 1 and player == self.p1):
@@ -78,9 +87,9 @@ class Wizard:
             print(f"Draw: {player} draws a card")
         self.current_turn_drawn = False
 
-    def show_hand(self):
+    def show_hand(self, player=None):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        current_player = player or state["current_player"]
         hand = state[current_player]["hand"]
 
         hand_cards = []
@@ -97,9 +106,9 @@ class Wizard:
         
         return hand_cards
 
-    def show_board(self):
+    def show_board(self, player=None):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        current_player = player or state["current_player"]
         creatures = state[current_player]["creatures"]
         lands = state[current_player]["lands"]
         
@@ -107,37 +116,39 @@ class Wizard:
         
         for card_id, creature_data in creatures.items():
             card = creature_data['card']
+            tapped = creature_data.get('tapped', card.get('tapped', False))
             board_cards.append({
                 'id': card_id,
                 'name': card['name'],
                 'type': 'Creature',
                 'attack': card.get('attack'),
                 'defence': card.get('defence'),
-                'tapped': creature_data.get('tapped', False),
+                'tapped': bool(tapped),
                 'status': creature_data.get('status', [])
             })
         
         for card_id, land_data in lands.items():
             card = land_data['card']
+            tapped = land_data.get('tapped', card.get('tapped', False))
             board_cards.append({
                 'id': card_id,
                 'name': card['name'],
                 'type': 'Land',
-                'tapped': land_data.get('tapped', False)
+                'tapped': bool(tapped)
             })
         
         return board_cards
 
-    def play_creature(self, creature_id):
+    def play_creature(self, creature_id, player=None):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        current_player = player or state["current_player"]
         if creature_id not in state[current_player]["hand"]:
             print("Invalid ID. Are you sure this card exists?")
         self.game.play_creature(current_player, creature_id)
 
-    def play_land(self, land_id):
+    def play_land(self, land_id, player=None):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        current_player = player or state["current_player"]
         if land_id not in state[current_player]["hand"]:
             print("Invalid ID. Are you sure this card exists?")
         self.game.play_land(current_player, land_id)
@@ -148,9 +159,36 @@ class Wizard:
         self.game.end_turn(current_player)
         # self.game.cleanup_temporary_effects()
 
-    def tap_land(self, land_id, choice=None):
+    def mulligan(self):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        player = state["current_player"]
+        turn_number = state.get("turn_number", 1)
+
+        if not (
+            (player == self.p1 and turn_number == 1) or
+            (player == self.p2 and turn_number == 2)
+        ):
+            print("Mulligan not allowed after your first turn.")
+            return False
+
+        hand = state[player]["hand"]
+        deck = state[player]["deck"]
+
+        deck.extend(list(hand.values()))
+        state[player]["hand"] = {}
+
+        random.shuffle(deck)
+        self.game._save_state(state)
+
+        for _ in range(7):
+            self.game.draw_card(player)
+
+        print(f"{player} mulligans and draws 7 cards.")
+        return True
+
+    def tap_land(self, land_id, choice=None, player=None):
+        state = self.game.get_game_state()
+        current_player = player or state["current_player"]
         
         if land_id not in state[current_player]["lands"]:
             print(f"Invalid ID. Are you sure this card exists?")
@@ -179,23 +217,86 @@ class Wizard:
         return True
 
     def declare_attackers(self, player, creature_ids):
-        self.game.declare_attackers(player, creature_ids)
+        return self.queue_attackers(player, creature_ids)
 
     def declare_blockers(self, defender, block_assignments):
-        self.game.declare_blockers(defender, block_assignments)
+        return self.queue_blockers(defender, block_assignments)
 
-    def show_mana(self):
+    def begin_combat(self, attacker):
+        defender = self.p2 if attacker == self.p1 else self.p1
+        self.combat_phase = "attackers"
+        self.priority_player = attacker
+        self.pending_attackers = []
+        self.pending_blocks = {}
+        self.combat_attacker = attacker
+        self.combat_defender = defender
+        return defender
+
+    def queue_attackers(self, player, creature_ids):
+        if self.combat_phase != "attackers" or self.priority_player != player:
+            print("Not your priority to declare attackers.")
+            return False
+        self.pending_attackers = creature_ids
+        return True
+
+    def pass_priority_to_blocker(self):
+        if self.combat_phase != "attackers" or not self.combat_attacker:
+            print("Not in attack step.")
+            return False
+        self.combat_phase = "blockers"
+        self.priority_player = self.combat_defender
+        return True
+
+    def queue_blockers(self, defender, block_assignments):
+        if self.combat_phase != "blockers" or self.priority_player != defender:
+            print("Not your priority to declare blockers.")
+            return False
+        self.pending_blocks = block_assignments
+        return True
+
+    def cancel_combat(self):
+        self.combat_phase = None
+        self.priority_player = None
+        self.pending_attackers = []
+        self.pending_blocks = {}
+        self.combat_attacker = None
+        self.combat_defender = None
+        return True
+
+    def confirm_combat(self):
+        if self.combat_phase != "blockers" or not self.combat_attacker or not self.combat_defender:
+            print("Blockers not declared yet.")
+            return [False, ""]
+
+        self.game.declare_attackers(self.combat_attacker, self.pending_attackers)
+        self.game.declare_blockers(self.combat_defender, self.pending_blocks)
+
+        self.combat_phase = None
+        self.priority_player = None
+        self.pending_attackers = []
+        self.pending_blocks = {}
+        self.combat_attacker = None
+        self.combat_defender = None
+
+        return self.resolve_combat()
+
+    def show_mana(self, player=None):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        current_player = player or state["current_player"]
+        pdata = state[current_player]
+        r = pdata.get("red_mana", 0)
+        g = pdata.get("green_mana", 0)
+        b = pdata.get("blue_mana", 0)
         return {
-            "green": state[current_player].get("green_mana", 0),
-            "blue": state[current_player].get("blue_mana", 0),
-            "red": state[current_player].get("red_mana", 0)
+            "R": r,
+            "G": g,
+            "B": b,
+            "Generic": r + g + b
         }
     
-    def show_deck(self):
+    def show_deck(self, player=None):
         state = self.game.get_game_state()
-        current_player = state["current_player"]
+        current_player = player or state["current_player"]
         deck = state[current_player]["deck"]
 
         deck_cards = []
@@ -235,36 +336,394 @@ class Wizard:
 if __name__ == '__main__':
     wiz = Wizard("Player1", "Player2")
     wiz.start()
-    print("Welcome to the Wizard Command Line Interface. This version is currently in Beta. Bugs and errors are to be expected.\nType \"help\" for more information.\n\n")
+    print("\nWelcome to the Wizard Command Line Interface. This version is currently in Beta. Bugs and errors are to be expected.\nType \"help\" for more information.\n")
     while True:
-        player = wiz.current_player()
-        command = input("{player}> ")
-
+        player = wiz.priority_player or wiz.current_player()
+        command = input(f"{player}> ")
         # commands
         if command == "help":
             print("COMMANDS:")
-            print("  land <id>     - Play land")
-            print("  play <id>     - Play creature")
-            print("  tap <id> [color] - Tap for mana (dual lands need color)")
+            # print("  land <id>     - Play land")
+            print("  help          - Shows this command")
+            print("  play <id>     - Play creature")    # done
+            print("  tap <id> [color] - Tap for mana (dual lands need color)")  # done
             print("  attack <ids>  - Declare attackers")
             print("  block <pairs> - Declare blockers")
-            print("  end           - End turn")
-            print("  mulligan      - Redraw opening hand (first turn only)")
-            print("  hand          - Show your hand")
-            print("  board         - Show battlefield")
-            print("  state         - Show full game state")
+            print("  end           - End turn") # done
+            print("  mulligan      - Redraw opening hand (first turn only)")    # done
+            print("  hand          - Show your hand")   # done
+            print("  board         - Show battlefield") # done
+            print("  state         - Show full game state") # done
             print("  graveyard     - Show graveyard")
             print("  deck          - Show deck\n")
+            print("  about <id>    - Shows information about a card")
             print("ADMIN COMMANDS:")
-            print("  mana <c> <n>  - Add mana")
+            print("  mana <c> <n>  - Add mana") # done
             print("  admindraw [card] - Draw card")
+            print("")
 
         elif command == "exit" or command == "quit" or command == "q":
             print("Quitting...")
             sys.exit()
         
         elif command == "hand":
-            a = wiz.show_hand()
+            a = wiz.show_hand(player)
             for item in a:
-                print(f"[{item["id"]}] {item["name"]} | {item["generic_mana"]}")
+                print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
+                         f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
+                
+        elif command == "board":
+            mana = wiz.show_mana(player)
+            print(f"\n{player}'s Mana:\n---------------------------------")
+            print(f"R: {mana['R']}")
+            print(f"G: {mana['G']}")
+            print(f"B: {mana['B']}")
+            print(f"Generic: {mana['Generic']}")
+            a = wiz.show_board(player)
+            has_creatures = any(item.get('type') == 'Creature' for item in a)
+            has_lands = any(item.get('type') == 'Land' for item in a)
+
+            print(f"\n{player}'s Active Creatures:\n---------------------------------")
+            if not has_creatures:
+                print("No creatures active.")
+            else:
+                for item in a:
+                    if item['type'] == 'Creature':
+                        print(f"[{item['id']}] {item['name']} ({'tapped' if item['tapped'] else 'untapped'})")
+
+            print(f"\n{player}'s Active Lands:\n---------------------------------")
+            if not has_lands:
+                print("No lands active.")
+            else:
+                for item in a:
+                    if item['type'] == 'Land':
+                        print(f"[{item['id']}] {item['name']} ({'tapped' if item['tapped'] else 'untapped'})")
+            print('\n')
+
+        elif command == "state":
+            state = wiz.game.get_game_state()
+            players = [wiz.p1, wiz.p2]
+
+            for p in players:
+                creatures = state[p]["creatures"]
+                lands = state[p]["lands"]
+
+                print(f"\n{p}'s Active Creatures:\n---------------------------------")
+                if not creatures:
+                    print("No creatures active.")
+                else:
+                    for cid, cdata in creatures.items():
+                        card = cdata["card"]
+                        tapped = cdata.get("tapped", card.get("tapped", False))
+                        print(f"[{cid}] {card['name']} ({'tapped' if tapped else 'untapped'})")
+
+                print(f"\n{p}'s Active Lands:\n---------------------------------")
+                if not lands:
+                    print("No lands active.")
+                else:
+                    for lid, ldata in lands.items():
+                        card = ldata["card"]
+                        tapped = ldata.get("tapped", card.get("tapped", False))
+                        print(f"[{lid}] {card['name']} ({'tapped' if tapped else 'untapped'})")
+
+                print()
+
+        elif command == "mulligan":
+            wiz.mulligan()
+
+        elif command == "end":
+            print("Turn complete.")
+            wiz.start_new_turn()
+
+        elif command.startswith("play "):
+            parts = command.split()
+            if len(parts) != 2:
+                print("Usage: play <id>")
+            else:
+                card_id = parts[1]
+                state = wiz.game.get_game_state()
+                current_player = player
+                hand = state[current_player]["hand"]
+
+                if card_id not in hand:
+                    print("Invalid ID. Are you sure this card exists?")
+                else:
+                    card = hand[card_id]
+                    card_type = card.get("type", "")
+
+                    if card_type == "Land":
+                        wiz.play_land(card_id, current_player)
+                    else:
+                        generic_cost = card.get("generic_mana", 0)
+                        color_cost = card.get("sp_mana", "")
+
+                        pdata = state[current_player]
+                        r = pdata.get("red_mana", 0)
+                        g = pdata.get("green_mana", 0)
+                        b = pdata.get("blue_mana", 0)
+                        total_mana = r + g + b
+                        color_mana = {"red": r, "green": g, "blue": b}.get(color_cost, 0)
+
+                        if color_cost and color_mana < 1:
+                            print("Not enough colored mana.")
+                        elif total_mana < (generic_cost + (1 if color_cost else 0)):
+                            print("Not enough total mana.")
+                        else:
+                            # pay mana via engine; only play if payment succeeds
+                            paid = wiz.game.pay_mana(current_player, generic_cost, color_cost if color_cost else None)
+                            if not paid:
+                                print("Payment failed, card not played.")
+                            else:
+                                wiz.play_creature(card_id, current_player)
+                                # show remaining mana
+                                mana = wiz.show_mana(current_player)
+                                print(f"Remaining mana: R - {mana['R']} G - {mana['G']} B - {mana['B']} (Total: {mana['Generic']})")
+        
+        elif command.startswith("tap "):
+            parts = command.split()
+            if len(parts) not in (2, 3):
+                print("Usage: tap <id> [color]")
+            else:
+                land_id = parts[1]
+                choice = parts[2] if len(parts) == 3 else None
+                wiz.tap_land(land_id, choice, player=player)
+        
+        elif command.startswith("mana "):
+            parts = command.split()
+            if len(parts) != 3:
+                print("Usage: mana <n> <color>")
+            else:
+                try:
+                    amount = int(parts[1])
+                    color = parts[2].lower()
+                    if color not in ("red", "green", "blue"):
+                        print("Color must be red, green, or blue.")
+                    else:
+                        state = wiz.game.get_game_state()
+                        current_player = player
+                        key = f"{color}_mana"
+                        state[current_player][key] = state[current_player].get(key, 0) + amount
+                        wiz.game._save_state(state)
+                        print(f"Added {amount} {color} mana to {current_player}.")
+                except ValueError:
+                    print("Amount must be an integer.")
+
+        elif command.startswith("about "):
+            parts = command.split()
+            if len(parts) != 2:
+                print("Usage: about <id>")
+            else:
+                cid = parts[1]
+                state = wiz.game.get_game_state()
+                found = None
+                zone = ""
+                owner = ""
+                for p in (wiz.p1, wiz.p2):
+                    hand = state[p].get("hand", {})
+                    if cid in hand:
+                        found = hand[cid]
+                        zone = "hand"
+                        owner = p
+                        break
+                    cre = state[p].get("creatures", {})
+                    if cid in cre:
+                        found = cre[cid].get("card", {})
+                        zone = "battlefield"
+                        owner = p
+                        break
+                    lands = state[p].get("lands", {})
+                    if cid in lands:
+                        found = lands[cid].get("card", {})
+                        zone = "lands"
+                        owner = p
+                        break
+                    for c in state[p].get("deck", []):
+                        if str(c.get("id")) == cid or c.get("id") == cid:
+                            found = c
+                            zone = "deck"
+                            owner = p
+                            break
+                    if found:
+                        break
+                    for c in state[p].get("graveyard", []):
+                        if str(c.get("id")) == cid or c.get("id") == cid:
+                            found = c
+                            zone = "graveyard"
+                            owner = p
+                            break
+                    if found:
+                        break
+
+                if not found:
+                    print("Card not found.")
+                else:
+                    name = found.get("name", "<unknown>")
+                    attack = found.get("attack")
+                    endurance = found.get("defence")
+                    desc = found.get("description") or found.get("desc") or found.get("text") or ""
+                    effect = found.get("effect", "")
+                    generic = found.get("generic_mana", found.get("generic_cost", 0))
+                    colour = found.get("sp_mana", found.get("color", ""))
+
+                    print(f"\nName: {name}")
+                    print(f"Attack: {attack if attack is not None else '-'}")
+                    print(f"Endurance: {endurance if endurance is not None else '-'}")
+                    print(f"Description: {desc if desc else '-'}")
+                    print(f"Effect: {effect if effect else '-'}")
+                    print(f"Generic cost: {generic}")
+                    print(f"Colour: {colour if colour else '-'}")
+                    print("\n")
+
+        elif command.startswith("attack "):
+            parts = command.split()
+            if len(parts) < 2:
+                print("Usage: attack <id> <id2> ...")
+            else:
+                attacker_ids = parts[1:]
+                # prefer the recorded combat attacker when in attackers phase
+                player = wiz.combat_attacker if (wiz.combat_phase == "attackers" and wiz.combat_attacker) else wiz.current_player()
+                if wiz.combat_phase is None:
+                    wiz.begin_combat(player)
+                if wiz.combat_phase != "attackers" or wiz.priority_player != player:
+                    print("It's not your priority to declare attackers.")
+                else:   
+                    wiz.queue_attackers(player, attacker_ids)
+                    print(f"Queued attackers: {', '.join(attacker_ids)}")
+        
+        elif command.startswith("block "):
+            parts = command.split()
+            if len(parts) != 3:
+                print("Usage: block <blocker_id> <attacker_id>")
+            else:
+                blocker_id, attacker_id = parts[1], parts[2]
+                # prefer the recorded combat defender when in blockers phase
+                defender = wiz.combat_defender if (wiz.combat_phase == "blockers" and wiz.combat_defender) else wiz.current_player()
+                if wiz.combat_phase != "blockers" or wiz.priority_player != defender:
+                    print("Not your priority to declare blockers.")
+                else:
+                    state = wiz.game.get_game_state()
+                    combat_attackers = state.get("combat", {}).get("attackers", [])
+                    active_attackers = wiz.pending_attackers or combat_attackers
+                    if attacker_id not in active_attackers:
+                        print("That attacker is not declared (or wrong id).")
+                    else:
+                        defender_creatures = state[defender].get("creatures", {})
+                        if blocker_id not in defender_creatures:
+                            print("Blocker not found on your battlefield.")
+                        else:
+                            bdata = defender_creatures[blocker_id]
+                            bcard = bdata.get("card", {})
+                            tapped = bdata.get("tapped", bcard.get("tapped", False))
+                            if tapped:
+                                print("Blocker is tapped and cannot block.")
+                            else:
+                                already_used = any(
+                                    blocker_id in (v if isinstance(v, list) else [v])
+                                    for v in wiz.pending_blocks.values()
+                                )
+                                if already_used:
+                                    print("This creature is already assigned to block.")
+                                else:
+                                    new_blocks = {**wiz.pending_blocks}
+                                    lst = new_blocks.get(attacker_id, [])
+                                    if isinstance(lst, str):
+                                        lst = [lst]
+                                    lst = list(lst)
+                                    lst.append(blocker_id)
+                                    new_blocks[attacker_id] = lst
+                                    if wiz.queue_blockers(defender, new_blocks):
+                                        print(f"Queued blocker {blocker_id} → attacker {attacker_id}")
+                                    else:
+                                        print("Failed to queue blocker.")
+        elif command == "preview":
+            if wiz.combat_phase is None:
+                print("No combat queued.")
+            else:
+                state = wiz.game.get_game_state()
+                atk = wiz.combat_attacker
+                dfd = wiz.combat_defender
+                combat_attackers = state.get("combat", {}).get("attackers", [])
+                display_attackers = wiz.pending_attackers or combat_attackers
+
+                def card_brief(owner, cid):
+                    zone = state[owner].get("creatures", {})
+                    c = zone.get(cid, {}).get("card", {})
+                    if not c:
+                        return f"{cid} (unknown)"
+                    return f"{cid} {c.get('name')} ({c.get('attack','-')}/{c.get('defence','-')})"
+
+                print(f"Phase: {wiz.combat_phase}  (Attacker: {atk}  Defender: {dfd})\n")
+
+                # show attackers (queued or already declared)
+                print("Queued attackers:")
+                if not display_attackers:
+                    print("  (none)")
+                else:
+                    for cid in display_attackers:
+                        owner = wiz.combat_attacker
+                        print("  -", card_brief(owner, cid))
+
+                # if defender or blockers phase, show current blocker assignments
+                if wiz.combat_phase == "blockers" or wiz.current_player() == wiz.combat_defender:
+                    print("\nPending blocks (attacker -> [blockers]):")
+                    if not wiz.pending_blocks:
+                        print("  (none)")
+                    else:
+                        for a_id, b_list in wiz.pending_blocks.items():
+                            if isinstance(b_list, str):
+                                b_list = [b_list]
+                            names = []
+                            for b in b_list:
+                                names.append(card_brief(wiz.combat_defender, b))
+                            print(f"  - {card_brief(wiz.combat_attacker, a_id)} -> {', '.join(names)}")
+
+                print("\nHints:")
+                if wiz.combat_phase == "attackers" and wiz.priority_player == wiz.combat_attacker:
+                    print("  - attacker: use 'confirm' to declare these attackers and pass priority to defender")
+                if wiz.combat_phase == "blockers" and wiz.priority_player == wiz.combat_defender:
+                    print("  - defender: use 'confirm' to lock blockers and resolve combat")
+                print("  - use 'cancel' to abort the queued combat\n")
+
+        elif command == "confirm":
+            if wiz.combat_phase is None:
+                print("No combat to confirm.")
+            elif wiz.combat_phase == "attackers":
+                if wiz.priority_player != wiz.combat_attacker:
+                    print("You don't have priority to confirm attackers.")
+                elif not wiz.pending_attackers:
+                    print("No attackers queued.")
+                else:
+                    # Declare attackers and pass priority to defender for blockers
+                    wiz.game.declare_attackers(wiz.combat_attacker, wiz.pending_attackers)
+                    wiz.pending_attackers = []
+                    wiz.pass_priority_to_blocker()
+                    print(f"Attackers declared — priority passed to {wiz.combat_defender} to declare blockers.")
+                    print(f"Priority: {wiz.priority_player} may now declare blockers (use 'block <blocker_id> <attacker_id>' or 'preview').")
+            elif wiz.combat_phase == "blockers":
+                if wiz.priority_player != wiz.combat_defender:
+                    print("You don't have priority to confirm blockers.")
+                else:
+                    # Declare blockers, resolve combat, then pass priority back to attacker
+                    wiz.game.declare_blockers(wiz.combat_defender, wiz.pending_blocks)
+                    wiz.pending_blocks = {}
+                    # Combat resolution
+                    won, loser = wiz.confirm_combat()
+                    if won:
+                        print(f"Combat resolved — {loser} lost the game.")
+                    else:
+                        print("Combat resolved.")
+                    wiz.combat_phase = None
+                    wiz.priority_player = wiz.combat_attacker
+                    print(f"Priority returned to {wiz.combat_attacker} for post-combat actions.")
+            else:
+                print("Cannot confirm in current phase.")
+
+        elif command == "cancel":
+            if wiz.combat_phase is None:
+                print("Nothing to cancel.")
+            else:
+                # Allow cancelling queued combat in local CLI — clears pending attackers/blocks
+                wiz.cancel_combat()
+                wiz.action_queue = []
+                print("Queued combat cancelled.")
     

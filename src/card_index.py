@@ -84,7 +84,7 @@ skeleton = SummonCard(name="Skeleton", generic_mana=2, sp_mana="blue", descripti
 skeleton_army = SummonCard(name="Skeleton Army", generic_mana=3, sp_mana="blue", description="Gains +1 to attack for every skeleton in the graveyard.", att=2, end=2, effect="haste; inc att (graveyard count Skeleton)")
 phantom_warrior = SummonCard(name="Phantom Warrior", generic_mana=3, sp_mana="blue", description="Reach. This creature can block flying creatures.", att=2, end=3, effect="reach")
 sea_serpent = SummonCard(name="Sea Serpent", generic_mana=4, sp_mana="blue", description="Trample. It's a powerful sea creature.|Ssssss", att=5, end=5, effect="trample")
-arcane_scholar = SummonCard(name="Arcane Scholar", generic_mana=2, sp_mana="blue", description="When this creature enters the battlefield, draw a card.|He is smart", att=1, end=3, effect="draw 1")
+arcane_scholar = SummonCard(name="Arcane Scholar", generic_mana=2, sp_mana="blue", description="When this creature enters the battlefield, draw a card.|He is smart", att=1, end=3, effect="summon? draw 1")
 vergil = SummonCard(name="Vergil", generic_mana=5, sp_mana="blue", description="The Storm that is Approaching. Cannot be blocked.|Deadbeat Dad", att=6, end=6, effect="unblockable")
 
 # Red creatures

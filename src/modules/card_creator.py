@@ -88,12 +88,27 @@ def create_card(card_data, output_path="card_output.png"):
     # Position trackers (2x)
     current_y = 8
     
-    # 1. Draw card name (top left) - abbreviate if needed
+    # 1. Draw card name (top left) - scale down font if needed
     card_name = card_data.name
-    # Abbreviate long names (keep first word + initial of second)
-    words = card_name.split()
-    if len(words) > 1 and len(card_name) > 8:
-        card_name = f"{words[0]} {words[1][0]}."
+    name_font_size = 24
+    max_name_width = CARD_WIDTH - 80  # Leave room for mana cost
+    
+    # Shrink font until name fits
+    while name_font_size > 8:  # Minimum font size of 8
+        test_font = load_font(name_font_size)
+        dummy = Image.new("L", (1, 1))
+        dummy_draw = ImageDraw.Draw(dummy)
+        bbox = dummy_draw.textbbox((0, 0), card_name, font=test_font)
+        text_width = bbox[2] - bbox[0]
+        
+        if text_width <= max_name_width:
+            name_font = test_font
+            break
+        name_font_size -= 2  # Reduce by 2 pixels at a time
+    else:
+        # If we hit minimum size, use it anyway
+        name_font = load_font(8)
+    
     draw_crisp_text(card, (8, current_y), card_name, name_font, (0, 0, 0, 255))
     
     # 2. Draw mana cost (top right with placeholder background)

@@ -146,6 +146,9 @@ class GameEngine:
         # Check for enter? triggers from other creatures
         self.check_enter_triggers(player, card_id)
         
+        # Check for summon? triggers
+        self.check_summon_triggers(player, card_id)
+
         return True
 
     # ===================
@@ -171,8 +174,6 @@ class GameEngine:
         card = player_data["deck"].pop(0)
         card_id = str(card["id"])
         player_data["hand"][card_id] = card
-        
-        print(f"[{self._timestamp()}] {player} draws: {card['name']} (ID: {card_id})")
         
         self._save_state(game_state)
         return True
@@ -371,7 +372,7 @@ class GameEngine:
                 else:
                     color = colors[0]
                 player_data[f"{color}_mana"] += 1
-                print(f"[{self._timestamp()}] {player} taps {land_data['card']['name']} for {color} → {color}_mana: {player_data[f'{color}_mana']}")
+                print(f"[{self._timestamp()}] {player} taps {land_data['card']['name']} for {color} -> {color}_mana: {player_data[f'{color}_mana']}")
         
         self._save_state(game_state)
         return True
@@ -461,30 +462,30 @@ class GameEngine:
         
         for creature_id in creature_ids:
             creature_id_str = str(creature_id)
-            
+
             if creature_id_str not in player_data["creatures"]:
                 print(f"  [{self._timestamp()}] Error: Creature ID {creature_id} not found")
                 continue
-            
+
             creature_data = player_data["creatures"][creature_id_str]
             card = creature_data["card"]
-            
+
             # Check if tapped
             if card["tapped"] == 1:
                 print(f"  [{self._timestamp()}] Error: {card['name']} is already tapped")
                 continue
-            
-            # Check summoning sickness
-            if creature_data.get("summoning_sickness", False):
-                print(f"  [{self._timestamp()}] Error: {card['name']} has summoning sickness")
+
+            # Prevent attacking if summoning sickness is true
+            if creature_data.get("summoning_sickness", True):
+                print(f"  [{self._timestamp()}] Error: {card['name']} has summoning sickness and cannot attack.")
                 continue
-            
+
             # Valid attacker
             attackers.append(creature_id_str)
-            
+
             # Check if vigilant (from status or effect)
             has_vigilant = "vigilant" in card.get("status", "").lower() or "notap" in card.get("status", "").lower()
-            
+
             # Tap creature unless vigilant
             if not has_vigilant:
                 card["tapped"] = 1
@@ -995,6 +996,38 @@ class GameEngine:
                 
         return count
 
+    def check_summon_triggers(self, summoning_player, summoning_card_id):
+        """
+        Check for and execute 'summon?' triggers when a creature is summoned.
+        """
+        game_state = self._load_state()
+        
+        print(f"[{self._timestamp()}] SUMMON TRIGGERS:")
+        
+        triggers_fired = False
+        
+        for player in [self.player1, self.player2]:
+            if player not in game_state:
+                continue
+                
+            player_data = game_state[player]
+            for creature_id, creature_data in player_data["creatures"].items():
+                creature_card = creature_data["card"]
+                effect = creature_card.get("effect", "")
+                
+                if "summon?" in effect:
+                    triggers_fired = True
+                    print(f"  [{self._timestamp()}] {creature_card['name']} triggers (summon?)")
+                    
+                    # Execute the summon? effect on this creature
+                    self._execute_trigger_effect(summoning_player, summoning_card_id, effect, "summon?")
+        
+        if not triggers_fired:
+            print(f"  [{self._timestamp()}] No summon? triggers")
+        
+        # Note: _execute_trigger_effect handles its own _save_state calls
+        return True
+
     def check_enter_triggers(self, entering_player, entering_card_id):
         """
         Check for and execute 'enter?' triggers when a creature enters.
@@ -1160,6 +1193,12 @@ class GameEngine:
                         creature_card[card_field] -= value
                         new_value = creature_card[card_field]
                         print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
+
+                elif effect["action"] == "draw":
+                    value = effect["value"]
+                    for i in range(value):
+                        self.draw_card(player)
+                    print(f"    [{self._timestamp()}] {player} draws {value} cards")
         
         # For grouped effects like "enter? inc att 1; inc end 1", the parser may split them
         # Look for follow-up effects without triggers that should be part of the same group
