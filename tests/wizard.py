@@ -14,7 +14,7 @@ from card_index import (
     # Lands
     forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands,
     # Spells
-    fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word
+    fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration
 )
 from modules.utils import *
 
@@ -34,7 +34,7 @@ class Wizard:
         ]
 
         spell_pool = [
-            fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word
+            fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration
         ]
 
         import copy
@@ -374,7 +374,40 @@ class Wizard:
                     'defence': None
                 })
         return graveyard_cards
-    
+
+    def draw_card_by_id(self, card_id, player=None):
+        state = self.game.get_game_state()
+        current_player = player or state["current_player"]
+        deck = state[current_player]["deck"]
+        hand = state[current_player]["hand"]
+        
+        # Search for card in deck (deck is a list)
+        card_to_draw = None
+        card_index = None
+        for i, card in enumerate(deck):
+            # Check both string and int ID matches
+            if str(card.get("id")) == str(card_id) or card.get("id") == card_id:
+                card_to_draw = card
+                card_index = i
+                break
+        
+        if card_to_draw is None:
+            print(f"Card with ID {card_id} not found in deck.")
+            return False
+        
+        # Remove card from deck
+        deck.pop(card_index)
+        
+        # Add to hand with card ID as key
+        card_id_str = str(card_to_draw.get("id"))
+        hand[card_id_str] = card_to_draw
+        
+        # Save state
+        self.game._save_state(state)
+        print(f"Drew {card_to_draw.get('name', 'card')} ({card_id_str})")
+        return True
+        
+
     def resolve_combat(self):
         state = self.game.get_game_state()
         current_player = state["current_player"]
@@ -587,11 +620,6 @@ if __name__ == '__main__':
                 print("You cannot play cards during combat.")
                 continue
 
-            # Also, only let them play once per turn
-            if wiz.card_played_this_turn >= 1:
-                print("You have already played a card this turn.")
-                continue
-
             parts = command.split()
             if len(parts) != 2:
                 print("Usage: play <id>")
@@ -606,6 +634,11 @@ if __name__ == '__main__':
                 else:
                     card = hand[card_id]
                     card_type = card.get("type", "")
+
+                    # Also, only let them play one land per turn.
+                    if wiz.card_played_this_turn >= 1 and card_type == "Land":
+                        print("You have already played a card this turn.")
+                        continue
 
                     if card_type == "Land":
                         wiz.play_land(card_id, current_player)
@@ -638,14 +671,6 @@ if __name__ == '__main__':
                                 print(f"Remaining mana: R - {mana['R']} G - {mana['G']} B - {mana['B']} (Total: {mana['Generic']})")
 
         elif command.startswith("cast "):
-            # Only allow casting if not in combat
-            if wiz.combat_phase is not None:
-                print("You cannot cast spells during combat.")
-                continue
-            # # Also, only let them play once per turn
-            # if wiz.card_played_this_turn >= 1:
-            #     print("You have already played a card this turn.")
-            #     continue
             parts = command.split()
             if len(parts) not in (2, 3):
                 print("Usage: cast <spell_id> [target_id|player]")
@@ -663,6 +688,15 @@ if __name__ == '__main__':
                         print("That card is not a spell. Use 'play' instead.")
                     else:
                         wiz.cast_spell(spell_id, target, player=current_player)
+
+        elif command.startswith("admindraw "):
+            parts = command.split()
+            if len(parts) != 2:
+                print("Usage: admindraw <card_id>")
+            else:
+                card_id = parts[1]
+                if wiz.draw_card_by_id(card_id, player):
+                    print(f"Card {card_id} drawn successfully.")
         
         elif command.startswith("tap "):
             parts = command.split()
