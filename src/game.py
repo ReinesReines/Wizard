@@ -152,6 +152,433 @@ class GameEngine:
 
         return True
 
+    def _resolve_spell_target_player(self, caster, target):
+        """Resolve target player from token (self/opponent/player name)."""
+        opponent = self.player2 if caster == self.player1 else self.player1
+        if target is None:
+            return None
+        target_str = str(target).lower()
+        if target_str == "self":
+            return caster
+        if target_str == "opponent":
+            return opponent
+        if str(target) in (self.player1, self.player2):
+            return str(target)
+        return None
+
+    def _resolve_spell_target_creature(self, game_state, target_id):
+        """Return (owner, creature_data) for a target creature id."""
+        if target_id is None:
+            return None, None
+        target_id_str = str(target_id)
+        for owner in [self.player1, self.player2]:
+            if target_id_str in game_state[owner]["creatures"]:
+                return owner, game_state[owner]["creatures"][target_id_str]
+        return None, None
+
+    def _resolve_target_kind(self, player, game_state, target):
+        """Return ('creature', owner, creature_data) or ('player', player_name, None)."""
+        owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+        if owner and creature_data:
+            return "creature", owner, creature_data
+        target_player = self._resolve_spell_target_player(player, target)
+        if target_player:
+            return "player", target_player, None
+        return None, None, None
+
+    def _validate_spell_target(self, player, card_dict, target):
+        """Validate target matches effect target_type (creature/player)."""
+        try:
+            from .modules.parser import EffectParser
+        except:
+            from modules.parser import EffectParser
+
+        game_state = self._load_state()
+        parser = EffectParser()
+        effects = parser.parse(card_dict.get("effect", ""))
+
+        required_target_type = None
+        requires_creature_id = False
+        for effect in effects:
+            if effect.get("trigger"):
+                continue
+            target_type = effect.get("target_type")
+            if effect.get("creatureid"):
+                requires_creature_id = True
+            if target_type:
+                if required_target_type and target_type != required_target_type:
+                    print(f"[{self._timestamp()}] Error: Spell has mixed target types")
+                    return False
+                required_target_type = target_type
+
+        if requires_creature_id:
+            if target is None:
+                print(f"[{self._timestamp()}] Error: Spell requires a creature target")
+                return False
+            owner, _ = self._resolve_spell_target_creature(game_state, target)
+            if not owner:
+                print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                return False
+
+        if isinstance(required_target_type, list):
+            if target is None:
+                print(f"[{self._timestamp()}] Error: Spell requires a target")
+                return False
+            owner, _ = self._resolve_spell_target_creature(game_state, target)
+            target_player = self._resolve_spell_target_player(player, target)
+            if not owner and not target_player:
+                print(f"[{self._timestamp()}] Error: Target {target} not found")
+                return False
+        elif required_target_type == "creature":
+            if target is None:
+                print(f"[{self._timestamp()}] Error: Spell requires a creature target")
+                return False
+            owner, _ = self._resolve_spell_target_creature(game_state, target)
+            if not owner:
+                print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                return False
+        elif required_target_type == "player":
+            if target is None:
+                print(f"[{self._timestamp()}] Error: Spell requires a player target")
+                return False
+            target_player = self._resolve_spell_target_player(player, target)
+            if not target_player:
+                print(f"[{self._timestamp()}] Error: Target player {target} not found")
+                return False
+
+        return True
+
+    def cast_spell(self, player, card_id, target=None):
+        """Cast a spell from hand and apply its effects to the specified target."""
+        game_state = self._load_state()
+
+        if player not in game_state:
+            print(f"[{self._timestamp()}] Error: Player '{player}' not found")
+            return False
+
+        card_id_str = str(card_id)
+        hand = game_state[player]["hand"]
+        if card_id_str not in hand:
+            print(f"[{self._timestamp()}] Error: Card ID {card_id} not in {player}'s hand")
+            return False
+
+        card_dict = hand[card_id_str]
+        if card_dict.get("type") != "Spell":
+            print(f"[{self._timestamp()}] Error: {card_dict.get('name', 'Card')} is not a spell")
+            return False
+
+        if not self._validate_spell_target(player, card_dict, target):
+            return False
+
+        generic_cost = card_dict.get("generic_mana", 0)
+        sp_mana = card_dict.get("sp_mana", "") or None
+        if not self.check_mana_cost(player, generic_cost, sp_mana):
+            print(f"[{self._timestamp()}] Error: Not enough mana to cast {card_dict.get('name')}")
+            return False
+
+        if not self.pay_mana(player, generic_cost, sp_mana):
+            return False
+
+        if not self.apply_spell_effect(player, card_dict, target):
+            return False
+
+        # Reload state to preserve changes from apply_spell_effect (e.g., nomanareset, mana payment)
+        game_state = self._load_state()
+        hand = game_state[player]["hand"]
+
+        # Move spell from hand to graveyard
+        if card_id_str in hand:
+            del hand[card_id_str]
+        game_state[player]["graveyard"].append(card_dict)
+        self._save_state(game_state)
+
+        print(f"[{self._timestamp()}] {player} casts {card_dict.get('name')}")
+        return True
+
+    def apply_spell_effect(self, player, card_dict, target=None):
+        """Resolve a spell's effect string against a target."""
+        try:
+            from .modules.parser import EffectParser
+        except:
+            from modules.parser import EffectParser
+
+        game_state = self._load_state()
+        parser = EffectParser()
+        effects = parser.parse(card_dict.get("effect", ""))
+
+        opponent = self.player2 if player == self.player1 else self.player1
+        needs_death_check = False
+        
+        def add_status(card, status):
+            existing = card.get("status", "")
+            if not existing:
+                card["status"] = status
+            else:
+                statuses = [s.strip() for s in existing.split(",") if s.strip()]
+                if status not in statuses:
+                    statuses.append(status)
+                    card["status"] = ", ".join(statuses)
+
+        def iter_active_creatures(players):
+            for owner in players:
+                for cid, cdata in game_state[owner]["creatures"].items():
+                    yield owner, cid, cdata
+
+        def iter_hand_creatures(owner):
+            for cid, card in game_state[owner]["hand"].items():
+                if card.get("type") == "Creature":
+                    yield owner, cid, card
+
+        for effect in effects:
+            if effect.get("trigger"):
+                continue
+            action = effect.get("action")
+            target_type = effect.get("target_type")
+            value = effect.get("value", 1)
+            if value is None:
+                value = 1
+
+            # Determine target kind if target is provided and target_type allows both
+            target_kind = None
+            target_owner = None
+            target_creature = None
+            if isinstance(target_type, list):
+                target_kind, target_owner, target_creature = self._resolve_target_kind(player, game_state, target)
+
+            if action in ("inc", "dec"):
+                field_mapping = {"att": "attack", "end": "defence"}
+                card_field = field_mapping.get(effect.get("field"), effect.get("field"))
+                delta = value if action == "inc" else -value
+
+                if effect.get("all"):
+                    for owner, cid, cdata in iter_active_creatures([self.player1, self.player2]):
+                        card = cdata["card"]
+                        if card_field in card:
+                            card[card_field] += delta
+                            if card_field == "attack":
+                                cdata["base_attack"] = cdata.get("base_attack", card[card_field]) + delta
+                            elif card_field == "defence":
+                                cdata["base_defence"] = cdata.get("base_defence", card[card_field]) + delta
+                    print(f"[{self._timestamp()}] All creatures {card_field} {'+' if delta>=0 else ''}{delta}")
+                elif effect.get("global"):
+                    # Apply to creatures in player's hand
+                    for owner, cid, card in iter_hand_creatures(player):
+                        if card_field in card:
+                            card[card_field] += delta
+                    print(f"[{self._timestamp()}] Hand creatures {card_field} {'+' if delta>=0 else ''}{delta}")
+                else:
+                    if effect.get("creatureid") or target_type == "creature" or target_kind == "creature":
+                        owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                        if not creature_data:
+                            print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                            return False
+                        creature_card = creature_data["card"]
+                        if card_field in creature_card:
+                            creature_card[card_field] += delta
+                            if card_field == "attack":
+                                creature_data["base_attack"] = creature_data.get("base_attack", creature_card[card_field]) + delta
+                            elif card_field == "defence":
+                                creature_data["base_defence"] = creature_data.get("base_defence", creature_card[card_field]) + delta
+                            print(f"[{self._timestamp()}] {creature_card['name']} {card_field} {'+' if delta>=0 else ''}{delta}")
+                    else:
+                        print(f"[{self._timestamp()}] Error: Spell requires a creature target")
+                        return False
+
+            elif action == "castinc" or action == "castdec":
+                delta = value if action == "castinc" else -value
+                field_mapping = {"att": "attack", "end": "defence"}
+                card_field = field_mapping.get(effect.get("field"), effect.get("field"))
+                owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                if not creature_data:
+                    print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                    return False
+                creature_card = creature_data["card"]
+                creature_card[card_field] += delta
+                if card_field == "attack":
+                    creature_data["base_attack"] = creature_data.get("base_attack", creature_card[card_field]) + delta
+                elif card_field == "defence":
+                    creature_data["base_defence"] = creature_data.get("base_defence", creature_card[card_field]) + delta
+                print(f"[{self._timestamp()}] {creature_card['name']} {card_field} {'+' if delta>=0 else ''}{delta}")
+
+            elif action == "damage":
+                if target_type == "creature" or effect.get("creatureid") or target_kind == "creature":
+                    owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                    if not creature_data:
+                        print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                        return False
+                    creature_card = creature_data["card"]
+                    creature_data["damage_taken"] = creature_data.get("damage_taken", 0) + value
+                    if not creature_data.get("invuln"):
+                        creature_card["defence"] -= value
+                    print(f"[{self._timestamp()}] {creature_card['name']} takes {value} damage")
+                    needs_death_check = True
+                else:
+                    target_player = self._resolve_spell_target_player(player, target)
+                    if target is not None and not target_player:
+                        print(f"[{self._timestamp()}] Error: Target player {target} not found")
+                        return False
+                    if not target_player:
+                        target_player = opponent
+                    game_state[target_player]["health"] -= value
+                    print(f"[{self._timestamp()}] {target_player} takes {value} damage")
+
+            elif action in ("destroy", "kill"):
+                if effect.get("all"):
+                    for owner, cid, cdata in list(iter_active_creatures([self.player1, self.player2])):
+                        game_state[owner]["graveyard"].append(cdata["card"])
+                        del game_state[owner]["creatures"][cid]
+                    print(f"[{self._timestamp()}] All active creatures are destroyed")
+                elif action == "kill" and effect.get("global"):
+                    for owner, cid, cdata in list(iter_active_creatures([player])):
+                        game_state[owner]["graveyard"].append(cdata["card"])
+                        del game_state[owner]["creatures"][cid]
+                    print(f"[{self._timestamp()}] {player}'s active creatures are destroyed")
+                else:
+                    owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                    if not creature_data:
+                        print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                        return False
+                    creature_card = creature_data["card"]
+                    game_state[owner]["graveyard"].append(creature_card)
+                    del game_state[owner]["creatures"][str(target)]
+                    print(f"[{self._timestamp()}] {creature_card['name']} is destroyed")
+
+            elif action == "add":
+                status = effect.get("field")
+                condition = effect.get("condition")
+                if condition in ("attackonly", "blockonly"):
+                    # Restrict status to current attackers/blockers
+                    attackers = game_state.get("combat", {}).get("attackers", [])
+                    blocks = game_state.get("combat", {}).get("blocks", {})
+                    if condition == "attackonly":
+                        for cid in attackers:
+                            if cid in game_state[player]["creatures"]:
+                                add_status(game_state[player]["creatures"][cid]["card"], status)
+                    else:
+                        for a_id, b_list in blocks.items():
+                            for b_id in b_list:
+                                if b_id in game_state[opponent]["creatures"]:
+                                    add_status(game_state[opponent]["creatures"][b_id]["card"], status)
+                    print(f"[{self._timestamp()}] Status {status} applied to {condition} creatures")
+                else:
+                    if effect.get("all"):
+                        for owner, cid, cdata in iter_active_creatures([self.player1, self.player2]):
+                            add_status(cdata["card"], status)
+                    elif effect.get("global"):
+                        for owner, cid, card in iter_hand_creatures(player):
+                            add_status(card, status)
+                    elif effect.get("creatureid") or target_type == "creature" or target_kind == "creature":
+                        owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                        if not creature_data:
+                            print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                            return False
+                        add_status(creature_data["card"], status)
+                    else:
+                        print(f"[{self._timestamp()}] Error: Spell requires a creature target")
+                        return False
+                    print(f"[{self._timestamp()}] Status {status} applied")
+
+            elif action == "morph":
+                if not (effect.get("creatureid") or target):
+                    print(f"[{self._timestamp()}] Error: Morph requires a creature target")
+                    return False
+                owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                if not creature_data:
+                    print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                    return False
+                new_name = effect.get("value")
+                new_card = self._find_card_by_name(new_name)
+                if not new_card:
+                    print(f"[{self._timestamp()}] Error: Card '{new_name}' not found")
+                    return False
+                executed = self._reconstruct_card(new_card.to_dict())
+                creature_data["card"] = executed.to_dict()
+                creature_data["base_attack"] = executed.attack
+                creature_data["base_defence"] = executed.defence
+                creature_data["damage_taken"] = 0
+                creature_data["summoning_sickness"] = True
+                print(f"[{self._timestamp()}] Creature {target} morphed into {new_name}")
+
+            elif action == "revive":
+                target_id = target
+                revived = False
+                for owner in [self.player1, self.player2]:
+                    graveyard = game_state[owner]["graveyard"]
+                    for idx, card in enumerate(graveyard):
+                        if not isinstance(card, dict):
+                            continue
+                        if str(card.get("id")) == str(target_id):
+                            card_obj = self._reconstruct_card(card)
+                            if not card_obj:
+                                continue
+                            game_state[owner]["creatures"][str(target_id)] = {
+                                "card": card_obj.to_dict(),
+                                "action": "attack",
+                                "summoning_sickness": True,
+                                "base_attack": card_obj.attack,
+                                "base_defence": card_obj.defence,
+                                "damage_taken": 0
+                            }
+                            del graveyard[idx]
+                            revived = True
+                            print(f"[{self._timestamp()}] {card_obj.name} revived")
+                            break
+                    if revived:
+                        break
+                if not revived:
+                    print(f"[{self._timestamp()}] Error: Creature {target_id} not found in graveyard")
+                    return False
+
+            elif action == "invuln":
+                owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                if not creature_data:
+                    print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                    return False
+                creature_data["invuln"] = True
+                creature_data["card"]["defence"] = 99999
+                print(f"[{self._timestamp()}] {creature_data['card']['name']} becomes invulnerable")
+
+            elif action == "nomanareset":
+                game_state[player]["nomanareset"] = True
+                print(f"[{self._timestamp()}] {player} will not reset mana this turn")
+
+            elif action == "draw":
+                target_player = self._resolve_spell_target_player(player, target) if target_type == "player" else player
+                for _ in range(value):
+                    self.draw_card(target_player)
+                print(f"[{self._timestamp()}] {target_player} draws {value} card(s)")
+
+            elif action == "heal":
+                if target_type == "creature" or target_kind == "creature" or effect.get("creatureid"):
+                    owner, creature_data = self._resolve_spell_target_creature(game_state, target)
+                    if not creature_data:
+                        print(f"[{self._timestamp()}] Error: Target creature {target} not found")
+                        return False
+                    creature_card = creature_data["card"]
+                    base_def = creature_data.get("base_defence", creature_card.get("defence", 0))
+                    creature_card["defence"] = min(creature_card["defence"] + value, base_def)
+                    creature_data["damage_taken"] = max(0, base_def - creature_card["defence"])
+                    print(f"[{self._timestamp()}] {creature_card['name']} heals {value}")
+                else:
+                    target_player = self._resolve_spell_target_player(player, target) if target_type == "player" else player
+                    max_health = 20
+                    game_state[target_player]["health"] = min(game_state[target_player]["health"] + value, max_health)
+                    print(f"[{self._timestamp()}] {target_player} heals {value}")
+
+            elif action == "discard":
+                target_player = self._resolve_spell_target_player(player, target) if target_type == "player" else opponent
+                hand = game_state[target_player]["hand"]
+                discard_ids = list(hand.keys())[:value]
+                for cid in discard_ids:
+                    game_state[target_player]["graveyard"].append(hand[cid])
+                    del hand[cid]
+                print(f"[{self._timestamp()}] {target_player} discards {len(discard_ids)} card(s)")
+
+        self._save_state(game_state)
+        if needs_death_check:
+            self.check_creature_deaths()
+        return True
+
     # ===================
     # CORE GAME LOOP
     # ===================
@@ -250,8 +677,9 @@ class GameEngine:
             if card_id not in player_data["hand"]:
                 print(f"[{self._timestamp()}] Error: Card ID {card_id} not found in {player}'s hand")
                 return False
+            card_dict = player_data["hand"][card_id]
             del player_data["hand"][card_id]
-            player_data["graveyard"].append(card_id)
+            player_data["graveyard"].append(card_dict)
         
         self._save_state(game_state)
         return True
@@ -285,11 +713,16 @@ class GameEngine:
             return
         
         player_data = game_state[player]
+        if player_data.get("nomanareset"):
+            print(f"  [{self._timestamp()}] Mana pool not reset due to nomanareset")
+            player_data["nomanareset"] = False
+            self._save_state(game_state)
+            return
+        else:
+            print(f"  [{self._timestamp()}] Mana pool cleared → blue: 0, red: 0, green: 0")
         player_data["blue_mana"] = 0
         player_data["red_mana"] = 0
         player_data["green_mana"] = 0
-        
-        print(f"  [{self._timestamp()}] Mana pool cleared → blue: 0, red: 0, green: 0")
         
         self._save_state(game_state)
 
@@ -637,6 +1070,10 @@ class GameEngine:
                     new_defence = card["defence"]
                     if old_defence != new_defence:
                         print(f"  [{self._timestamp()}] {card['name']} defence restored: {old_defence} → {new_defence} (base {base_defence} - {damage_taken} damage)")
+
+                # Clear invulnerability each turn
+                if creature_data.get("invuln"):
+                    creature_data["invuln"] = False
         
         self._save_state(game_state)
 
@@ -834,7 +1271,8 @@ class GameEngine:
                     creature_data["damage_taken"] = old_damage + damage_amount
                     
                     old_defence = creature_card["defence"]
-                    creature_card["defence"] -= damage_amount
+                    if not creature_data.get("invuln"):
+                        creature_card["defence"] -= damage_amount
                     new_defence = creature_card["defence"]
                     
                     print(f"  [{self._timestamp()}] {creature_card['name']} takes {damage_amount} damage → Defence: {old_defence} → {new_defence}")
@@ -1187,6 +1625,16 @@ class GameEngine:
         
         creature_data = game_state[player]["creatures"][creature_id]
         creature_card = creature_data["card"]
+
+        def add_status(card, status):
+            existing = card.get("status", "")
+            if not existing:
+                card["status"] = status
+            else:
+                statuses = [s.strip() for s in existing.split(",") if s.strip()]
+                if status not in statuses:
+                    statuses.append(status)
+                    card["status"] = ", ".join(statuses)
         
         # Parse the effect to find the specific trigger
         parser = EffectParser()
@@ -1201,7 +1649,7 @@ class GameEngine:
             if effect_trigger == trigger_type or effect_trigger == trigger_without_question:
                 print(f"    [{self._timestamp()}] Executing: {effect}")
                 
-                # Apply the effect to the creature (or globally to all active creatures)
+                # Apply the effect to the creature (or globally)
                 if effect["action"] in ("inc", "dec"):
                     field = effect["field"]
                     value = effect["value"]
@@ -1211,26 +1659,26 @@ class GameEngine:
                     field_mapping = {"att": "attack", "end": "defence"}
                     card_field = field_mapping.get(field, field)
 
-                    # Global effects apply to all active creatures you control (battlefield only)
-                    if effect.get("global"):
-                        for cid, cdata in game_state[player]["creatures"].items():
-                            # Skip the source creature for "other creatures you control"
-                            if cid == str(creature_id):
+                    if effect.get("all"):
+                        for owner in [self.player1, self.player2]:
+                            for cid, cdata in game_state[owner]["creatures"].items():
+                                target_card = cdata["card"]
+                                if card_field not in target_card:
+                                    continue
+                                delta = sign * value
+                                target_card[card_field] += delta
+                                if card_field == "attack":
+                                    cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
+                                elif card_field == "defence":
+                                    cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
+                        print(f"    [{self._timestamp()}] All creatures {card_field} {'+' if sign*value>=0 else ''}{sign*value}")
+                    elif effect.get("global"):
+                        for cid, card in game_state[player]["hand"].items():
+                            if card.get("type") != "Creature":
                                 continue
-                            target_card = cdata["card"]
-                            if card_field not in target_card:
-                                continue
-                            old_value = target_card[card_field]
-                            delta = sign * value
-                            target_card[card_field] += delta
-
-                            # Keep base stats in sync for ongoing global buffs
-                            if card_field == "attack":
-                                cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
-                            elif card_field == "defence":
-                                cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
-
-                            print(f"    [{self._timestamp()}] {target_card['name']} {card_field}: {old_value} → {target_card[card_field]} (global)")
+                            if card_field in card:
+                                card[card_field] += sign * value
+                        print(f"    [{self._timestamp()}] Hand creatures {card_field} {'+' if sign*value>=0 else ''}{sign*value}")
                     else:
                         if card_field in creature_card:
                             old_value = creature_card[card_field]
@@ -1238,6 +1686,45 @@ class GameEngine:
                             creature_card[card_field] += delta
                             new_value = creature_card[card_field]
                             print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
+
+                elif effect["action"] == "add":
+                    status = effect.get("field")
+                    if effect.get("all"):
+                        for owner in [self.player1, self.player2]:
+                            for cid, cdata in game_state[owner]["creatures"].items():
+                                add_status(cdata["card"], status)
+                        print(f"    [{self._timestamp()}] Status {status} added to all creatures")
+                    elif effect.get("global"):
+                        for cid, card in game_state[player]["hand"].items():
+                            if card.get("type") != "Creature":
+                                continue
+                            add_status(card, status)
+                        print(f"    [{self._timestamp()}] Status {status} added to hand creatures")
+                    else:
+                        add_status(creature_card, status)
+                        print(f"    [{self._timestamp()}] {creature_card['name']} gains {status}")
+
+                elif effect["action"] in ("kill", "destroy"):
+                    if effect.get("all"):
+                        for owner in [self.player1, self.player2]:
+                            for cid, cdata in list(game_state[owner]["creatures"].items()):
+                                game_state[owner]["graveyard"].append(cdata["card"])
+                                del game_state[owner]["creatures"][cid]
+                        print(f"    [{self._timestamp()}] All creatures destroyed")
+                    elif effect.get("global"):
+                        for cid, cdata in list(game_state[player]["creatures"].items()):
+                            game_state[player]["graveyard"].append(cdata["card"])
+                            del game_state[player]["creatures"][cid]
+                        print(f"    [{self._timestamp()}] {player}'s creatures destroyed")
+                    else:
+                        game_state[player]["graveyard"].append(creature_card)
+                        del game_state[player]["creatures"][str(creature_id)]
+                        print(f"    [{self._timestamp()}] {creature_card['name']} destroyed")
+
+                elif effect["action"] == "invuln":
+                    creature_data["invuln"] = True
+                    creature_card["defence"] = 99999
+                    print(f"    [{self._timestamp()}] {creature_card['name']} becomes invulnerable")
 
                 elif effect["action"] == "draw":
                     value = effect["value"]
@@ -1263,11 +1750,26 @@ class GameEngine:
                     field_mapping = {"att": "attack", "end": "defence"}
                     card_field = field_mapping.get(field, field)
                     
-                    if card_field in creature_card:
-                        old_value = creature_card[card_field]
-                        creature_card[card_field] += value
-                        new_value = creature_card[card_field]
-                        print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
+                    if effect.get("all"):
+                        for owner in [self.player1, self.player2]:
+                            for cid, cdata in game_state[owner]["creatures"].items():
+                                target_card = cdata["card"]
+                                if card_field in target_card:
+                                    target_card[card_field] += value
+                        print(f"    [{self._timestamp()}] All creatures {card_field} +{value}")
+                    elif effect.get("global"):
+                        for cid, card in game_state[player]["hand"].items():
+                            if card.get("type") != "Creature":
+                                continue
+                            if card_field in card:
+                                card[card_field] += value
+                        print(f"    [{self._timestamp()}] Hand creatures {card_field} +{value}")
+                    else:
+                        if card_field in creature_card:
+                            old_value = creature_card[card_field]
+                            creature_card[card_field] += value
+                            new_value = creature_card[card_field]
+                            print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
         
         # Save the modified creature stats
         self._save_state(game_state)
@@ -1325,6 +1827,19 @@ class GameEngine:
         else:
             print(f"Unknown card type: {card_type}")
             return None
+
+    def _find_card_by_name(self, name):
+        """Find a card definition by name in card_index."""
+        try:
+            from . import card_index as card_index_module
+        except:
+            import card_index as card_index_module
+        target = name.strip().lower()
+        for value in card_index_module.__dict__.values():
+            if hasattr(value, "name") and isinstance(value.name, str):
+                if value.name.lower() == target:
+                    return value
+        return None
 
     def get_game_state(self):
         """Get the current game state with proper formatting for CLI."""

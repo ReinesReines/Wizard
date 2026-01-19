@@ -12,7 +12,9 @@ from card_index import (
     skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar, vergil,
     goblin_raider, fire_elemental, dragon_whelp, berserker,
     # Lands
-    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands
+    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands,
+    # Spells
+    fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word
 )
 from modules.utils import *
 
@@ -31,18 +33,24 @@ class Wizard:
             mountain, mountain, tropical_grove, volcanic_peak
         ]
 
+        spell_pool = [
+            fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word
+        ]
+
         import copy
         
         # Create separate deck copies for each player to avoid ID conflicts
-        deck1_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(20)]
-        deck1_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(18)]
-        deck1 = deck1_lands + deck1_creatures
+        deck1_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(24)]
+        deck1_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
+        deck1_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(12)]
+        deck1 = deck1_lands + deck1_creatures + deck1_spells
         random.shuffle(deck1)
         
         deck2 = copy.deepcopy(creature_pool) + copy.deepcopy(creature_pool) + copy.deepcopy(land_pool)
-        deck2_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(20)]
-        deck2_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(18)]
-        deck2 = deck2_lands + deck2_creatures
+        deck2_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(24)]
+        deck2_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
+        deck2_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(12)]
+        deck2 = deck2_lands + deck2_creatures + deck2_spells
         random.shuffle(deck2)
 
         self.game = GameEngine(p1, p2, deck1, deck2)
@@ -71,6 +79,7 @@ class Wizard:
     def start_new_turn(self):
         self.game.cleanup_temporary_effects()
         self.card_played_this_turn = 0
+        self.game.check_creature_deaths()
         
         state = self.game.get_game_state()
         current_turn_number = state.get("turn_number", 0)
@@ -170,6 +179,17 @@ class Wizard:
         if land_id not in state[current_player]["hand"]:
             print("Invalid ID. Are you sure this card exists?")
         self.game.play_land(current_player, land_id)
+
+    def cast_spell(self, spell_id, target, player=None):
+        state = self.game.get_game_state()
+        current_player = player or state["current_player"]
+        if spell_id not in state[current_player]["hand"]:
+            print("Invalid ID. Are you sure this card exists?")
+            return False
+        success = self.game.cast_spell(current_player, spell_id, target)
+        if success:
+            self.card_played_this_turn += 1
+        return success
 
     def mulligan(self):
         state = self.game.get_game_state()
@@ -388,6 +408,7 @@ if __name__ == '__main__':
             # print("  land <id>     - Play land")
             print("  help          - Shows this command")
             print("  play <id>     - Play creature")    # done
+            print("  cast <id> [target] - Cast spell (optional target)")
             print("  tap <id> [color] - Tap for mana (dual lands need color)")  # done
             print("  attack <ids>  - Declare attackers")
             print("  block <pairs> - Declare blockers")
@@ -407,6 +428,12 @@ if __name__ == '__main__':
         elif command == "exit" or command == "quit" or command == "q":
             print("Quitting...")
             sys.exit()
+
+        # elif command.startswith("admindraw "):
+        #     # draws the card specified
+        #     card_name = command.split(" ")[1]
+        #     wiz.game.draw_card(player, card_name)
+        #     print(f"[{card_name}] drawn")
         
         elif command == "hand":
             a = wiz.show_hand(player)
@@ -438,6 +465,29 @@ if __name__ == '__main__':
                     print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
                           f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
                 print(f"\nTotal cards: {len(a)}")
+            print()
+
+        elif command == "enemydeck":
+            a = wiz.show_deck(wiz.p2 if player == wiz.p1 else wiz.p1)
+            print(f"\n{wiz.p2 if player == wiz.p1 else wiz.p1}'s Deck:\n---------------------------------")
+            if not a:
+                print("Deck is empty.")
+            else:
+                for item in a:
+                    print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
+                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
+                print(f"\nTotal cards: {len(a)}")
+            print()
+
+        elif command == "enemyhand":
+            a = wiz.show_hand(wiz.p2 if player == wiz.p1 else wiz.p1)
+            print(f"\n{wiz.p2 if player == wiz.p1 else wiz.p1}'s Hand:\n---------------------------------")
+            if not a:
+                print("Hand is empty.")
+            else:
+                for item in a:
+                    print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
+                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
             print()
 
         elif command == "board":
@@ -559,6 +609,8 @@ if __name__ == '__main__':
 
                     if card_type == "Land":
                         wiz.play_land(card_id, current_player)
+                    elif card_type == "Spell":
+                        print("Use 'cast <id> <target>' to cast spells.")
                     else:
                         generic_cost = card.get("generic_mana", 0)
                         color_cost = card.get("sp_mana", "")
@@ -584,6 +636,33 @@ if __name__ == '__main__':
                                 # show remaining mana
                                 mana = wiz.show_mana(current_player)
                                 print(f"Remaining mana: R - {mana['R']} G - {mana['G']} B - {mana['B']} (Total: {mana['Generic']})")
+
+        elif command.startswith("cast "):
+            # Only allow casting if not in combat
+            if wiz.combat_phase is not None:
+                print("You cannot cast spells during combat.")
+                continue
+            # # Also, only let them play once per turn
+            # if wiz.card_played_this_turn >= 1:
+            #     print("You have already played a card this turn.")
+            #     continue
+            parts = command.split()
+            if len(parts) not in (2, 3):
+                print("Usage: cast <spell_id> [target_id|player]")
+            else:
+                spell_id = parts[1]
+                target = parts[2] if len(parts) == 3 else None
+                state = wiz.game.get_game_state()
+                current_player = player
+                hand = state[current_player]["hand"]
+                if spell_id not in hand:
+                    print("Invalid ID. Are you sure this card exists?")
+                else:
+                    card = hand[spell_id]
+                    if card.get("type", "") != "Spell":
+                        print("That card is not a spell. Use 'play' instead.")
+                    else:
+                        wiz.cast_spell(spell_id, target, player=current_player)
         
         elif command.startswith("tap "):
             parts = command.split()

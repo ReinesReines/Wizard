@@ -6,7 +6,10 @@ class EffectParser:
     TRIGGERS = ['summon?', 'block?', 'attack?', 'tap?', 'enter?']
     STATIC_ABILITIES = ['haste', 'flying', 'reach', 'entertap', 'unblockable', 'vigilant', 'trample']
     MODIFIERS = ['inc', 'dec']
-    ACTIONS = ['gen', 'draw', 'discard', 'heal', 'return', 'count']
+    ACTIONS = ['gen', 'draw', 'discard', 'heal', 'return', 'count', 'damage', 'destroy',
+               'add', 'kill', 'morph', 'revive', 'nomanareset', 'castinc', 'castdec', 'invuln']
+    TARGET_TYPES = ['creature', 'player']
+    CONDITIONS = ['attackonly', 'blockonly']
     PLACES = ['graveyard', 'deck']
     FIELDS = ['att', 'end']
     
@@ -37,7 +40,11 @@ class EffectParser:
             'raw': instruction,
             'action': None,
             'field': None,
-            'value': None
+            'value': None,
+            'target_type': None,
+            'creatureid': False,
+            'all': False,
+            'condition': None
         }
         
         if instruction.strip() in self.STATIC_ABILITIES:
@@ -60,6 +67,10 @@ class EffectParser:
         
         if tokens[idx] == 'global':
             result['global'] = True
+            idx += 1
+        
+        if idx < len(tokens) and tokens[idx] == 'all':
+            result['all'] = True
             idx += 1
         
         if idx >= len(tokens):
@@ -86,6 +97,19 @@ class EffectParser:
                         result['value'] = 1
             else:
                 result['value'] = 1
+            
+            if idx < len(tokens):
+                if tokens[idx] == 'creatureid':
+                    result['creatureid'] = True
+                    idx += 1
+                else:
+                    target_token = tokens[idx]
+                    if '/' in target_token:
+                        result['target_type'] = target_token.split('/')
+                        idx += 1
+                    elif target_token in self.TARGET_TYPES:
+                        result['target_type'] = target_token
+                        idx += 1
         
         elif action == 'gen':
             if idx < len(tokens):
@@ -93,14 +117,28 @@ class EffectParser:
                 result['field'] = 'mana'
                 result['value'] = colors
         
-        elif action in ['draw', 'discard', 'heal']:
+        elif action in ['draw', 'discard', 'heal', 'damage']:
             if idx < len(tokens):
                 try:
                     result['value'] = int(tokens[idx])
                 except ValueError:
                     result['value'] = 1
+                idx += 1
             else:
                 result['value'] = 1
+            
+            if idx < len(tokens):
+                if tokens[idx] == 'creatureid':
+                    result['creatureid'] = True
+                    idx += 1
+                else:
+                    target_token = tokens[idx]
+                    if '/' in target_token:
+                        result['target_type'] = target_token.split('/')
+                        idx += 1
+                    elif target_token in self.TARGET_TYPES:
+                        result['target_type'] = target_token
+                        idx += 1
         
         elif action == 'count':
             if idx < len(tokens):
@@ -114,6 +152,63 @@ class EffectParser:
             if idx < len(tokens):
                 result['value'] = tokens[idx]
         
+        elif action in ('destroy', 'kill', 'revive', 'nomanareset', 'invuln'):
+            if idx < len(tokens):
+                if tokens[idx] == 'creatureid':
+                    result['creatureid'] = True
+                    idx += 1
+                else:
+                    target_token = tokens[idx]
+                    if '/' in target_token:
+                        result['target_type'] = target_token.split('/')
+                        idx += 1
+                    elif target_token in self.TARGET_TYPES:
+                        result['target_type'] = target_token
+                        idx += 1
+            if action == 'nomanareset':
+                result['value'] = True
+        
+        elif action == 'add':
+            if idx < len(tokens):
+                result['field'] = tokens[idx]  # status
+                idx += 1
+            if idx < len(tokens) and tokens[idx] in self.CONDITIONS:
+                result['condition'] = tokens[idx]
+                idx += 1
+            if idx < len(tokens):
+                if tokens[idx] == 'creatureid':
+                    result['creatureid'] = True
+                    idx += 1
+                else:
+                    target_token = tokens[idx]
+                    if '/' in target_token:
+                        result['target_type'] = target_token.split('/')
+                        idx += 1
+                    elif target_token in self.TARGET_TYPES:
+                        result['target_type'] = target_token
+                        idx += 1
+        
+        elif action in ('morph', 'castinc', 'castdec'):
+            if idx < len(tokens):
+                if tokens[idx] == 'creatureid':
+                    result['creatureid'] = True
+                    idx += 1
+                else:
+                    result['field'] = tokens[idx]
+                    idx += 1
+            if action in ('castinc', 'castdec'):
+                if idx < len(tokens):
+                    result['field'] = tokens[idx]  # att/end
+                    idx += 1
+                if idx < len(tokens):
+                    try:
+                        result['value'] = int(tokens[idx])
+                    except ValueError:
+                        result['value'] = 1
+                    idx += 1
+            if action == 'morph' and idx < len(tokens):
+                result['value'] = tokens[idx]
+        
         return result
     
     def _tokenize(self, instruction):
@@ -121,8 +216,21 @@ class EffectParser:
         current = ""
         depth = 0
         paren_content = ""
+        in_quotes = False
         
         for char in instruction:
+            if char == '"' and depth == 0:
+                if in_quotes:
+                    if current.strip():
+                        tokens.append(current.strip())
+                        current = ""
+                    in_quotes = False
+                else:
+                    if current.strip():
+                        tokens.append(current.strip())
+                        current = ""
+                    in_quotes = True
+                continue
             if char == '(':
                 if depth == 0:
                     if current.strip():
@@ -137,6 +245,8 @@ class EffectParser:
                     paren_content = ""
             elif depth > 0:
                 paren_content += char
+            elif in_quotes:
+                current += char
             elif char.isspace():
                 if current.strip():
                     tokens.append(current.strip())

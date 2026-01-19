@@ -93,6 +93,25 @@ fire_elemental = SummonCard(name="Fire Elemental", generic_mana=3, sp_mana="red"
 dragon_whelp = SummonCard(name="Dragon Whelp", generic_mana=4, sp_mana="red", description="Flying. This baby dragon will grow to be quite terrifying.", att=2, end=3, effect="flying")
 berserker = SummonCard(name="Berserker", generic_mana=2, sp_mana="red", description="Gains +2 attack when attacking, but -1 endurance.", att=2, end=3, effect="attack? inc att 2; attack? dec end 1")
 
+# Red spell cards
+fireball = SpellCard(name="Fireball", generic_mana=3, sp_mana="red", description="Deal 3 damage to target creature.", effect="damage 3 creatureid")
+wild_hunt = SpellCard(name="Wild Hunt", generic_mana=4, sp_mana="red", description="Give all attacking creatures you control trample.", effect="global add trample attackonly")
+berserk = SpellCard(name="Berserk", generic_mana=2, sp_mana="red", description="Give target creature +2 attack and -1 endurance.", effect="all inc att 2; all dec end 1")
+scorched_earth = SpellCard(name="Scorched Earth", generic_mana=9, sp_mana="red", description="Destroy all active creatures.", effect="all destroy")
+rot = SpellCard(name="Rot", generic_mana=3, sp_mana="red", description="Force your opponent to discard 2 cards.|hibgiiuehrf", effect="discard 2 player")
+wrath = SpellCard(name="Wrath", generic_mana=3, sp_mana="red", description="Deal 4 damage to a target creature. Discard a card.", effect="destroy creatureid; discard 1 player")
+
+# Blue spell cards
+oath = SpellCard(name="Oath", generic_mana=3, sp_mana="blue", description="You do not reset your mana pool at the end of your turn.", effect="nomanareset")
+polymorph_skeleton = SpellCard(name="Skeleton Polymorph", generic_mana=3, sp_mana="blue", description="Morph target creature into a skeleton.|ragh", effect="morph creatureid \"Skeleton\"")
+bless = SpellCard(name="Bless", generic_mana=5, sp_mana="blue", description="Give a creature invulnerability.", effect="add invuln creatureid")
+wingify = SpellCard(name="Wingify", generic_mana=2, sp_mana="blue", description="Give a creature flying.", effect="add flying creatureid")
+eldritch_blast = SpellCard(name="Eldritch Blast", generic_mana=2, sp_mana="blue", description="Deal 2 damage to a target creature. Draw a card.", effect="damage 2 creatureid; draw 1")
+# Green spell cards
+healing_word = SpellCard(name="Healing Word", generic_mana=1, sp_mana="green", description="Heal 2 damage from target creature.", effect="heal 2 creatureid")
+inspiration = SpellCard(name="Inspiration", generic_mana=2, sp_mana="green", description="Increase a creature's endurance by 1 when it blocks an attack.", effect="castinc creatureid end 1")
+
+
 # Collections for card_creator.py
 _universal_cards = [
     # Green creatures
@@ -105,4 +124,8 @@ _universal_cards = [
 
 _land_cards = [
     forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands
+]
+
+_spell_cards = [
+    fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration,
 ]
