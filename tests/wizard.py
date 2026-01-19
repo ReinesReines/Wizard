@@ -62,30 +62,46 @@ class Wizard:
         self.pending_blocks = {}
         self.combat_attacker = None
         self.combat_defender = None
+        self.card_played_this_turn = 0
 
     def current_player(self):
         state = self.game.get_game_state()
         return state["current_player"]
     
     def start_new_turn(self):
-        state = self.game.get_game_state()
-        current_turn = state.get("turn_number", 0) + 1
+        self.game.cleanup_temporary_effects()
+        self.card_played_this_turn = 0
         
-        if current_turn % 2 == 1:
-            self.game.start_turn(self.p1)
+        state = self.game.get_game_state()
+        current_turn_number = state.get("turn_number", 0)
+        next_turn_number = current_turn_number + 1
+        
+        if next_turn_number % 2 == 1:
+            current_player = self.p1
         else:
-            self.game.start_turn(self.p2)
+            current_player = self.p2
+
+        # Discard down to 7 happens after draw step (use updated hand size)
+        
+        # Start the turn so current_player/turn_number are set in game state
+        self.game.start_turn(current_player)
         
         state = self.game.get_game_state()
         player = state["current_player"]
+        turn_number = state.get("turn_number", 1)
+        
+        # Clear priority_player so the prompt shows the correct current player
+        self.priority_player = None
         
         self.game.clear_mana_pool(player)
         self.game.untap_step(player)
 
-        if not (current_turn == 1 and player == self.p1):
+        if not (turn_number == 1 and player == self.p1) and not (turn_number == 2 and player == self.p2):
             self.game.draw_step(player)
             print(f"Draw: {player} draws a card")
         self.current_turn_drawn = False
+
+        # Discard step moved to end of turn
 
     def show_hand(self, player=None):
         state = self.game.get_game_state()
@@ -140,6 +156,7 @@ class Wizard:
         return board_cards
 
     def play_creature(self, creature_id, player=None):
+        self.card_played_this_turn += 1
         state = self.game.get_game_state()
         current_player = player or state["current_player"]
         if creature_id not in state[current_player]["hand"]:
@@ -147,17 +164,12 @@ class Wizard:
         self.game.play_creature(current_player, creature_id)
 
     def play_land(self, land_id, player=None):
+        self.card_played_this_turn += 1
         state = self.game.get_game_state()
         current_player = player or state["current_player"]
         if land_id not in state[current_player]["hand"]:
             print("Invalid ID. Are you sure this card exists?")
         self.game.play_land(current_player, land_id)
-
-    def end_turn(self):
-        state = self.game.get_game_state()
-        current_player = state["current_player"]
-        self.game.end_turn(current_player)
-        # self.game.cleanup_temporary_effects()
 
     def mulligan(self):
         state = self.game.get_game_state()
@@ -222,6 +234,11 @@ class Wizard:
     def declare_blockers(self, defender, block_assignments):
         return self.queue_blockers(defender, block_assignments)
 
+    def get_health(self, player=None):
+        state = self.game.get_game_state()
+        current_player = player or state["current_player"]
+        return state[current_player]["health"]
+
     def begin_combat(self, attacker):
         defender = self.p2 if attacker == self.p1 else self.p1
         self.combat_phase = "attackers"
@@ -268,9 +285,6 @@ class Wizard:
             print("Blockers not declared yet.")
             return [False, ""]
 
-        self.game.declare_attackers(self.combat_attacker, self.pending_attackers)
-        self.game.declare_blockers(self.combat_defender, self.pending_blocks)
-
         self.combat_phase = None
         self.priority_player = None
         self.pending_attackers = []
@@ -312,6 +326,34 @@ class Wizard:
             })
         
         return deck_cards
+
+    def show_graveyard(self, player=None):
+        state = self.game.get_game_state()
+        current_player = player or state["current_player"]
+        graveyard = state[current_player].get("graveyard", [])
+        graveyard_cards = []
+        for card in graveyard:
+            if isinstance(card, dict):
+                graveyard_cards.append({
+                    'id': card.get('id'),
+                    'name': card.get('name', '<unknown>'),
+                    'type': card.get('type', 'Unknown'),
+                    'generic_mana': card.get('generic_mana', 0),
+                    'sp_mana': card.get('sp_mana', ''),
+                    'attack': card.get('attack'),
+                    'defence': card.get('defence')
+                })
+            else:
+                graveyard_cards.append({
+                    'id': str(card),
+                    'name': '<unknown>',
+                    'type': 'Unknown',
+                    'generic_mana': 0,
+                    'sp_mana': '',
+                    'attack': None,
+                    'defence': None
+                })
+        return graveyard_cards
     
     def resolve_combat(self):
         state = self.game.get_game_state()
@@ -372,9 +414,36 @@ if __name__ == '__main__':
                 print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
                 
+        elif command == "graveyard":
+            a = wiz.show_graveyard(player)
+            print(f"\n{player}'s Graveyard:\n---------------------------------")
+            if not a:
+                print("Graveyard is empty.")
+            else:
+                for item in a:
+                    mana = (
+                        f"{item['generic_mana']}"
+                        f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'}"
+                    )
+                    print(f"[{item['id']}] {item['name']} ({mana})")
+            print()
+
+        elif command == "deck":
+            a = wiz.show_deck(player)
+            print(f"\n{player}'s Deck:\n---------------------------------")
+            if not a:
+                print("Deck is empty.")
+            else:
+                for item in a:
+                    print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
+                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
+                print(f"\nTotal cards: {len(a)}")
+            print()
+
         elif command == "board":
             mana = wiz.show_mana(player)
-            print(f"\n{player}'s Mana:\n---------------------------------")
+            print(f"\n{player}'s Health: {wiz.get_health(player)}\n---------------------------------")
+            print(f"{player}'s Mana:\n---------------------------------")
             print(f"R: {mana['R']}")
             print(f"G: {mana['G']}")
             print(f"B: {mana['B']}")
@@ -432,10 +501,47 @@ if __name__ == '__main__':
             wiz.mulligan()
 
         elif command == "end":
+            # Check if the player is the attacker and has queued attackers but hasn't confirmed
+            if wiz.combat_phase == "attackers" and wiz.combat_attacker == player and wiz.pending_attackers:
+                print("You must confirm your attackers before ending your turn. Use 'confirm' to declare attackers.")
+                continue
+            # Check if the player is the defender and has not confirmed blockers
+            if wiz.combat_phase == "blockers" and wiz.combat_defender == player:
+                print("You must confirm blockers before ending your turn. Use 'confirm' to resolve combat.")
+                continue
+            # Discard down to 7 at end of turn
+            state = wiz.game.get_game_state()
+            hand_length = len(state[player]["hand"])
+            if hand_length > 7:
+                a = wiz.show_hand(player)
+                for item in a:
+                    print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
+                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
+
+                print(f"You have {hand_length} cards in your hand. Please discard {hand_length - 7} cards.")
+                while True:
+                    discard_cards = input("Enter the IDs of the cards you want to discard: ").split()
+                    if len(discard_cards) == hand_length - 7:
+                        wiz.game.discard_cards(player, discard_cards)
+                        break
+                    elif len(discard_cards) > hand_length - 7:
+                        print("You cannot discard more cards than you have in your hand. Please try again.")
+                    else:
+                        print(f"You must discard {hand_length - 7} cards. Please try again.")
             print("Turn complete.")
             wiz.start_new_turn()
 
         elif command.startswith("play "):
+            # Only allow playing if not in combat
+            if wiz.combat_phase is not None:
+                print("You cannot play cards during combat.")
+                continue
+
+            # Also, only let them play once per turn
+            if wiz.card_played_this_turn >= 1:
+                print("You have already played a card this turn.")
+                continue
+
             parts = command.split()
             if len(parts) != 2:
                 print("Usage: play <id>")
@@ -695,10 +801,15 @@ if __name__ == '__main__':
                 else:
                     # Declare attackers and pass priority to defender for blockers
                     wiz.game.declare_attackers(wiz.combat_attacker, wiz.pending_attackers)
-                    wiz.pending_attackers = []
-                    wiz.pass_priority_to_blocker()
-                    print(f"Attackers declared — priority passed to {wiz.combat_defender} to declare blockers.")
-                    print(f"Priority: {wiz.priority_player} may now declare blockers (use 'block <blocker_id> <attacker_id>' or 'preview').")
+                    state = wiz.game.get_game_state()
+                    declared_attackers = state.get("combat", {}).get("attackers", [])
+                    if not declared_attackers:
+                        print("No valid attackers were declared. Priority remains with attacker.")
+                    else:
+                        wiz.pending_attackers = []
+                        wiz.pass_priority_to_blocker()
+                        print(f"Attackers declared — priority passed to {wiz.combat_defender} to declare blockers.")
+                        print(f"Priority: {wiz.priority_player} may now declare blockers (use 'block <blocker_id> <attacker_id>' or 'preview').")
             elif wiz.combat_phase == "blockers":
                 if wiz.priority_player != wiz.combat_defender:
                     print("You don't have priority to confirm blockers.")
@@ -713,6 +824,7 @@ if __name__ == '__main__':
                     else:
                         print("Combat resolved.")
                     wiz.combat_phase = None
+                    # Return priority to attacker for post-combat main phase
                     wiz.priority_player = wiz.combat_attacker
                     print(f"Priority returned to {wiz.combat_attacker} for post-combat actions.")
             else:

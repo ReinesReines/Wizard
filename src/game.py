@@ -125,7 +125,8 @@ class GameEngine:
             "action": "attack",  # Default action
             "summoning_sickness": not card_has_ability(executed_card, "haste"),
             "base_attack": executed_card.attack,
-            "base_defence": executed_card.defence
+            "base_defence": executed_card.defence,
+            "damage_taken": 0  # Track combat damage separately from temporary stat changes
         }
         
         # Add to player's creatures on battlefield
@@ -236,6 +237,24 @@ class GameEngine:
         game_state = self._load_state()
         game_state["phase"] = "main_pre"
         self._save_state(game_state)
+
+    def discard_cards(self, player, card_ids):
+        """Discard cards from hand."""
+        game_state = self._load_state()
+        
+        if player not in game_state:
+            return
+        
+        player_data = game_state[player]
+        for card_id in card_ids:
+            if card_id not in player_data["hand"]:
+                print(f"[{self._timestamp()}] Error: Card ID {card_id} not found in {player}'s hand")
+                return False
+            del player_data["hand"][card_id]
+            player_data["graveyard"].append(card_id)
+        
+        self._save_state(game_state)
+        return True
     
     def end_turn(self, player):
         """Run cleanup, clear mana pool, shift to opponent."""
@@ -287,9 +306,9 @@ class GameEngine:
             return False
         
         # Check lands played this turn
-        if game_state.get("lands_played_this_turn", 0) >= 1:
-            print(f"[{self._timestamp()}] Error: {player} already played a land this turn")
-            return False
+        # if game_state.get("lands_played_this_turn", 0) >= 1:
+        #     print(f"[{self._timestamp()}] Error: {player} already played a land this turn")
+        #     return False
         
         player_data = game_state[player]
         card_id_str = str(card_id)
@@ -590,21 +609,34 @@ class GameEngine:
         return True
     
     def cleanup_temporary_effects(self):
-        """Remove all temporary buffs at end of turn."""
+        """
+        Remove temporary buffs at end of turn (like attack? triggers).
+        Restores stats to base, then reapplies combat damage (which is permanent).
+        """
         game_state = self._load_state()
         
         for player in [self.player1, self.player2]:
             for creature_id, creature_data in game_state[player]["creatures"].items():
                 card = creature_data["card"]
-                
-                # Restore to base stats (stored when creature entered)
                 base_attack = creature_data.get("base_attack")
                 base_defence = creature_data.get("base_defence")
+                damage_taken = creature_data.get("damage_taken", 0)
                 
-                if base_attack is not None and base_defence is not None:
+                # Restore both stats to base (removes temporary buffs/debuffs)
+                if base_attack is not None:
+                    old_attack = card["attack"]
+                    if old_attack != base_attack:
+                        card["attack"] = base_attack
+                        print(f"  [{self._timestamp()}] {card['name']} attack restored: {old_attack} → {base_attack} (temporary buff removed)")
+                
+                # Restore defence to base, then reapply combat damage (which persists)
+                if base_defence is not None:
                     old_defence = card["defence"]
-                    card["attack"] = base_attack
-                    card["defence"] = base_defence
+                    # Restore to base, then subtract damage_taken
+                    card["defence"] = base_defence - damage_taken
+                    new_defence = card["defence"]
+                    if old_defence != new_defence:
+                        print(f"  [{self._timestamp()}] {card['name']} defence restored: {old_defence} → {new_defence} (base {base_defence} - {damage_taken} damage)")
         
         self._save_state(game_state)
 
@@ -796,6 +828,10 @@ class GameEngine:
                 if target_id in game_state[target_player]["creatures"]:
                     creature_data = game_state[target_player]["creatures"][target_id]
                     creature_card = creature_data["card"]
+                    
+                    # Track damage separately and apply to current defence
+                    old_damage = creature_data.get("damage_taken", 0)
+                    creature_data["damage_taken"] = old_damage + damage_amount
                     
                     old_defence = creature_card["defence"]
                     creature_card["defence"] -= damage_amount
@@ -1165,34 +1201,43 @@ class GameEngine:
             if effect_trigger == trigger_type or effect_trigger == trigger_without_question:
                 print(f"    [{self._timestamp()}] Executing: {effect}")
                 
-                # Apply the effect to the creature
-                if effect["action"] == "inc":
+                # Apply the effect to the creature (or globally to all active creatures)
+                if effect["action"] in ("inc", "dec"):
                     field = effect["field"]
                     value = effect["value"]
+                    sign = 1 if effect["action"] == "inc" else -1
                     
                     # Map parser field names to card field names
                     field_mapping = {"att": "attack", "end": "defence"}
                     card_field = field_mapping.get(field, field)
-                    
-                    if card_field in creature_card:
-                        old_value = creature_card[card_field]
-                        creature_card[card_field] += value
-                        new_value = creature_card[card_field]
-                        print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
-                
-                elif effect["action"] == "dec":
-                    field = effect["field"]
-                    value = effect["value"]
-                    
-                    # Map parser field names to card field names
-                    field_mapping = {"att": "attack", "end": "defence"}
-                    card_field = field_mapping.get(field, field)
-                    
-                    if card_field in creature_card:
-                        old_value = creature_card[card_field]
-                        creature_card[card_field] -= value
-                        new_value = creature_card[card_field]
-                        print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
+
+                    # Global effects apply to all active creatures you control (battlefield only)
+                    if effect.get("global"):
+                        for cid, cdata in game_state[player]["creatures"].items():
+                            # Skip the source creature for "other creatures you control"
+                            if cid == str(creature_id):
+                                continue
+                            target_card = cdata["card"]
+                            if card_field not in target_card:
+                                continue
+                            old_value = target_card[card_field]
+                            delta = sign * value
+                            target_card[card_field] += delta
+
+                            # Keep base stats in sync for ongoing global buffs
+                            if card_field == "attack":
+                                cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
+                            elif card_field == "defence":
+                                cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
+
+                            print(f"    [{self._timestamp()}] {target_card['name']} {card_field}: {old_value} → {target_card[card_field]} (global)")
+                    else:
+                        if card_field in creature_card:
+                            old_value = creature_card[card_field]
+                            delta = sign * value
+                            creature_card[card_field] += delta
+                            new_value = creature_card[card_field]
+                            print(f"    [{self._timestamp()}] {creature_card['name']} {card_field}: {old_value} → {new_value}")
 
                 elif effect["action"] == "draw":
                     value = effect["value"]
