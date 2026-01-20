@@ -103,7 +103,7 @@ wrath = SpellCard(name="Wrath", generic_mana=3, sp_mana="red", description="Deal
 
 # Blue spell cards
 oath = SpellCard(name="Oath", generic_mana=3, sp_mana="blue", description="You do not reset your mana pool at the end of your turn.", effect="nomanareset")
-polymorph_skeleton = SpellCard(name="Skeleton Polymorph", generic_mana=3, sp_mana="blue", description="Morph target creature into a skeleton.|ragh", effect="morph creatureid \"Skeleton\"")
+polymorph_skeleton = SpellCard(name="Polymorph Skeleton", generic_mana=3, sp_mana="blue", description="Morph target creature into a skeleton.|ragh", effect="morph creatureid \"Skeleton\"")
 bless = SpellCard(name="Bless", generic_mana=5, sp_mana="blue", description="Give a creature invulnerability.", effect="add invuln creatureid")
 wingify = SpellCard(name="Wingify", generic_mana=2, sp_mana="blue", description="Give a creature flying.", effect="add flying creatureid")
 eldritch_blast = SpellCard(name="Eldritch Blast", generic_mana=2, sp_mana="blue", description="Deal 2 damage to a target creature. Draw a card.", effect="damage 2 creatureid; draw 1")

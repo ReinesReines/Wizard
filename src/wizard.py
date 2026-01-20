@@ -471,9 +471,14 @@ if __name__ == '__main__':
         elif command == "hand":
             a = wiz.show_hand(player)
             for item in a:
+                type_label = {
+                    "Creature": "CREATURE",
+                    "Land": "LAND",
+                    "Spell": "SPELL"
+                }.get(item.get("type"), "CARD")
                 print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
-                         f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
-                
+                        f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'}) - {type_label}")
+            
         elif command == "graveyard":
             a = wiz.show_graveyard(player)
             print(f"\n{player}'s Graveyard:\n---------------------------------")
@@ -598,7 +603,12 @@ if __name__ == '__main__':
             if hand_length > 7:
                 a = wiz.show_hand(player)
                 for item in a:
-                    print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
+                    type_label = {
+                        "Creature": "CREATURE",
+                        "Land": "LAND",
+                        "Spell": "SPELL"
+                    }.get(item.get("type"), "CARD")
+                    print(f"[{type_label}] [{item['id']}] {item['name']} ({item['generic_mana']}"
                           f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
 
                 print(f"You have {hand_length} cards in your hand. Please discard {hand_length - 7} cards.")

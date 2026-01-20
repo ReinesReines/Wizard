@@ -3,8 +3,8 @@ import os
 import random
 
 # Card dimensions (2x for clarity)
-CARD_WIDTH = 264
-CARD_HEIGHT = 448
+CARD_WIDTH = 320
+CARD_HEIGHT = 560
 
 # Mana icon dimensions (2x)
 MANA_ICON_SIZE = 32
@@ -81,9 +81,9 @@ def create_card(card_data, output_path="card_output.png"):
     
     # Load fonts - exact multiples of 8 for crisp pixel rendering
     name_font = load_font(24)
-    mana_font = load_font(32)
+    mana_font = load_font(24)
     text_font = load_font(16)
-    stats_font = load_font(32)
+    stats_font = load_font(24)
     
     # Position trackers (2x)
     current_y = 8
@@ -117,14 +117,14 @@ def create_card(card_data, output_path="card_output.png"):
         placeholder_original = Image.open(placeholder_path).convert("RGBA")
         # Scale 2x with nearest neighbor
         placeholder = placeholder_original.resize((PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT), Image.NEAREST)
-        placeholder_x = CARD_WIDTH - PLACEHOLDER_WIDTH - 4
+        placeholder_x = CARD_WIDTH - PLACEHOLDER_WIDTH - 8
         placeholder_y = current_y
         card.paste(placeholder, (placeholder_x, placeholder_y), placeholder)
         
         # Generic mana number
         generic_mana = str(card_data.generic_mana)
         mana_text_x = placeholder_x + 6
-        mana_text_y = placeholder_y - 6
+        mana_text_y = placeholder_y
         draw_crisp_text(card, (mana_text_x, mana_text_y), generic_mana, mana_font, (0, 0, 0, 255))
         
         # Colored mana icon
