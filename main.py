@@ -5,7 +5,7 @@ width, height = 800, 600
 background_color = (75, 82, 99)
 
 
-screen = pygame.display.set_mode((width, height))
+screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
 pygame.display.set_caption('Wizard')
 screen.fill(background_color)
