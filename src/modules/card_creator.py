@@ -4,7 +4,7 @@ import random
 
 # Card dimensions (2x for clarity)
 CARD_WIDTH = 320
-CARD_HEIGHT = 560
+CARD_HEIGHT = 448
 
 # Mana icon dimensions (2x)
 MANA_ICON_SIZE = 32
@@ -66,9 +66,12 @@ def create_card(card_data, output_path="card_output.png"):
         card_data: Card object (SummonCard, SpellCard, or LandCards)
         output_path: Path where to save the generated card
     """
-    # Load random card base (card1-card6.png) and scale 2x with nearest neighbor
-    card_num = random.randint(1, 6)
-    card_base_path = os.path.join(ASSETS_PATH, f"card{card_num}.png")
+    # Load card base and scale 2x with nearest neighbor
+    if getattr(card_data, "type", "") == "Spell":
+        card_base_path = os.path.join(ASSETS_PATH, "card7.png")
+    else:
+        card_num = random.randint(1, 6)
+        card_base_path = os.path.join(ASSETS_PATH, f"card{card_num}.png")
     if os.path.exists(card_base_path):
         card_original = Image.open(card_base_path).convert('RGBA')
         # Scale 2x using nearest neighbor for pixel-perfect scaling
@@ -82,7 +85,7 @@ def create_card(card_data, output_path="card_output.png"):
     # Load fonts - exact multiples of 8 for crisp pixel rendering
     name_font = load_font(24)
     mana_font = load_font(24)
-    text_font = load_font(16)
+    text_font = load_font(18)
     stats_font = load_font(24)
     
     # Position trackers (2x)
@@ -147,10 +150,13 @@ def create_card(card_data, output_path="card_output.png"):
     # Check if it's a land card by looking in the lands folder first
     land_image_path = os.path.join(ASSETS_PATH, "lands", creature_image_name)
     creature_image_path = os.path.join(ASSETS_PATH, creature_image_name)
+    spell_image_path = os.path.join(ASSETS_PATH, "spells", creature_image_name)
     
     # Prioritize land folder for land images
     if os.path.exists(land_image_path):
         image_path = land_image_path
+    elif os.path.exists(spell_image_path):
+        image_path = spell_image_path
     elif os.path.exists(creature_image_path):
         image_path = creature_image_path
     else:
@@ -247,7 +253,7 @@ if __name__ == "__main__":
     import sys
     sys.path.append(os.path.dirname(os.path.dirname(__file__)))
     
-    from card_index import _universal_cards, _land_cards
+    from card_index import _universal_cards, _land_cards, _spell_cards
     
     # Create cards folder if it doesn't exist
     cards_output_path = os.path.join(ASSETS_PATH, "cards")
@@ -262,6 +268,13 @@ if __name__ == "__main__":
         land_assets = [f for f in os.listdir(lands_path) if f.endswith('.png')]
     else:
         land_assets = []
+
+    # Get all spell images in spells folder
+    spells_path = os.path.join(ASSETS_PATH, "spells")
+    if os.path.exists(spells_path):
+        spell_assets = [f for f in os.listdir(spells_path) if f.endswith('.png')]
+    else:
+        spell_assets = []
     
     # Filter out card bases and mana icons
     skip_files = {'placeholder.png', 'red_mana.png', 'blue_mana.png', 'green_mana.png'}
@@ -269,11 +282,11 @@ if __name__ == "__main__":
     
     creature_images = [f for f in all_assets if f not in skip_files]
     
-    # Combine creature and land images
-    all_images = creature_images + land_assets
+    # Combine creature, land, and spell images
+    all_images = creature_images + land_assets + spell_assets
     
     # Create a map of card names to card objects
-    all_cards = _universal_cards + _land_cards
+    all_cards = _universal_cards + _land_cards + _spell_cards
     card_map = {card.name.lower().replace(" ", "_") + ".png": card for card in all_cards}
     
     # Generate cards for each image

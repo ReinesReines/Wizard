@@ -40,16 +40,16 @@ class Wizard:
         import copy
         
         # Create separate deck copies for each player to avoid ID conflicts
-        deck1_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(24)]
+        deck1_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(28)]
         deck1_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
-        deck1_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(12)]
+        deck1_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(16)]
         deck1 = deck1_lands + deck1_creatures + deck1_spells
         random.shuffle(deck1)
         
         deck2 = copy.deepcopy(creature_pool) + copy.deepcopy(creature_pool) + copy.deepcopy(land_pool)
-        deck2_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(24)]
+        deck2_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(28)]
         deck2_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
-        deck2_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(12)]
+        deck2_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(16)]
         deck2 = deck2_lands + deck2_creatures + deck2_spells
         random.shuffle(deck2)
 
@@ -470,18 +470,29 @@ if __name__ == '__main__':
         
         elif command == "hand":
             a = wiz.show_hand(player)
+            print(f"\n{player}'s Hand ({len(a)} cards):\n---------------------------------")
+            if not a:
+                print("Hand is empty.\n")
+                continue
             for item in a:
                 type_label = {
                     "Creature": "CREATURE",
                     "Land": "LAND",
                     "Spell": "SPELL"
                 }.get(item.get("type"), "CARD")
-                print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
-                        f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'}) - {type_label}")
+                mana = (
+                    f"{item['generic_mana']}"
+                    f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'}"
+                )
+                stats = ""
+                if item.get("attack") is not None and item.get("defence") is not None:
+                    stats = f" | {item['attack']}/{item['defence']}"
+                print(f"[{item['id']}] {item['name']} ({mana}) - {type_label}{stats}")
+            print()
             
         elif command == "graveyard":
             a = wiz.show_graveyard(player)
-            print(f"\n{player}'s Graveyard:\n---------------------------------")
+            print(f"\n{player}'s Graveyard ({len(a)} cards):\n---------------------------------")
             if not a:
                 print("Graveyard is empty.")
             else:
@@ -495,43 +506,68 @@ if __name__ == '__main__':
 
         elif command == "deck":
             a = wiz.show_deck(player)
-            print(f"\n{player}'s Deck:\n---------------------------------")
+            print(f"\n{player}'s Deck ({len(a)} cards):\n---------------------------------")
             if not a:
                 print("Deck is empty.")
             else:
+                type_counts = {"Creature": 0, "Land": 0, "Spell": 0, "Other": 0}
                 for item in a:
+                    t = item.get("type", "Other")
+                    if t not in type_counts:
+                        t = "Other"
+                    type_counts[t] += 1
                     print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
                           f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
-                print(f"\nTotal cards: {len(a)}")
+                print(f"\nTypes: C {type_counts['Creature']} | L {type_counts['Land']} | S {type_counts['Spell']} | O {type_counts['Other']}")
             print()
 
         elif command == "enemydeck":
             a = wiz.show_deck(wiz.p2 if player == wiz.p1 else wiz.p1)
-            print(f"\n{wiz.p2 if player == wiz.p1 else wiz.p1}'s Deck:\n---------------------------------")
+            opponent = wiz.p2 if player == wiz.p1 else wiz.p1
+            print(f"\n{opponent}'s Deck ({len(a)} cards):\n---------------------------------")
             if not a:
                 print("Deck is empty.")
             else:
+                type_counts = {"Creature": 0, "Land": 0, "Spell": 0, "Other": 0}
                 for item in a:
+                    t = item.get("type", "Other")
+                    if t not in type_counts:
+                        t = "Other"
+                    type_counts[t] += 1
                     print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
                           f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
-                print(f"\nTotal cards: {len(a)}")
+                print(f"\nTypes: C {type_counts['Creature']} | L {type_counts['Land']} | S {type_counts['Spell']} | O {type_counts['Other']}")
             print()
 
         elif command == "enemyhand":
             a = wiz.show_hand(wiz.p2 if player == wiz.p1 else wiz.p1)
-            print(f"\n{wiz.p2 if player == wiz.p1 else wiz.p1}'s Hand:\n---------------------------------")
+            opponent = wiz.p2 if player == wiz.p1 else wiz.p1
+            print(f"\n{opponent}'s Hand ({len(a)} cards):\n---------------------------------")
             if not a:
                 print("Hand is empty.")
             else:
                 for item in a:
+                    type_label = {
+                        "Creature": "CREATURE",
+                        "Land": "LAND",
+                        "Spell": "SPELL"
+                    }.get(item.get("type"), "CARD")
+                    stats = ""
+                    if item.get("attack") is not None and item.get("defence") is not None:
+                        stats = f" | {item['attack']}/{item['defence']}"
                     print(f"[{item['id']}] {item['name']} ({item['generic_mana']}"
-                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'})")
+                          f"{'+R' if item['sp_mana'] == 'red' else '+G' if item['sp_mana'] == 'green' else '' if item['sp_mana'] == '' else '+B'}) - {type_label}{stats}")
             print()
 
         elif command == "board":
             mana = wiz.show_mana(player)
-            print(f"\n{player}'s Health: {wiz.get_health(player)}\n---------------------------------")
-            print(f"{player}'s Mana:\n---------------------------------")
+            state = wiz.game.get_game_state()
+            turn_number = state.get("turn_number", 0)
+            current_player = state.get("current_player", player)
+            print(f"\n{player}'s Status\n---------------------------------")
+            print(f"Turn: {turn_number} | Active: {current_player}")
+            print(f"Health: {wiz.get_health(player)}")
+            print(f"Mana: R {mana['R']} | G {mana['G']} | B {mana['B']} | Total {mana['Generic']}")
             print(f"R: {mana['R']}")
             print(f"G: {mana['G']}")
             print(f"B: {mana['B']}")
@@ -546,7 +582,12 @@ if __name__ == '__main__':
             else:
                 for item in a:
                     if item['type'] == 'Creature':
-                        print(f"[{item['id']}] {item['name']} ({'tapped' if item['tapped'] else 'untapped'})")
+                        stats = ""
+                        if item.get("attack") is not None and item.get("defence") is not None:
+                            stats = f" {item['attack']}/{item['defence']}"
+                        status = item.get("status", [])
+                        status_label = f" | {', '.join(status)}" if status else ""
+                        print(f"[{item['id']}] {item['name']}{stats} ({'tapped' if item['tapped'] else 'untapped'}){status_label}")
 
             print(f"\n{player}'s Active Lands:\n---------------------------------")
             if not has_lands:
@@ -561,6 +602,11 @@ if __name__ == '__main__':
             state = wiz.game.get_game_state()
             players = [wiz.p1, wiz.p2]
 
+            print("\nGame Summary\n---------------------------------")
+            print(f"Turn: {state.get('turn_number', 0)} | Active: {state.get('current_player', '-')}")
+            print(f"{wiz.p1}: {state[wiz.p1].get('health', 0)} HP | Hand {len(state[wiz.p1].get('hand', {}))} | Deck {len(state[wiz.p1].get('deck', []))} | Graveyard {len(state[wiz.p1].get('graveyard', []))}")
+            print(f"{wiz.p2}: {state[wiz.p2].get('health', 0)} HP | Hand {len(state[wiz.p2].get('hand', {}))} | Deck {len(state[wiz.p2].get('deck', []))} | Graveyard {len(state[wiz.p2].get('graveyard', []))}")
+
             for p in players:
                 creatures = state[p]["creatures"]
                 lands = state[p]["lands"]
@@ -572,7 +618,12 @@ if __name__ == '__main__':
                     for cid, cdata in creatures.items():
                         card = cdata["card"]
                         tapped = cdata.get("tapped", card.get("tapped", False))
-                        print(f"[{cid}] {card['name']} ({'tapped' if tapped else 'untapped'})")
+                        stats = ""
+                        if card.get("attack") is not None and card.get("defence") is not None:
+                            stats = f" {card.get('attack')}/{card.get('defence')}"
+                        status = cdata.get("status", "")
+                        status_label = f" | {status}" if status else ""
+                        print(f"[{cid}] {card['name']}{stats} ({'tapped' if tapped else 'untapped'}){status_label}")
 
                 print(f"\n{p}'s Active Lands:\n---------------------------------")
                 if not lands:

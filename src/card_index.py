@@ -107,6 +107,8 @@ polymorph_skeleton = SpellCard(name="Skeleton Polymorph", generic_mana=3, sp_man
 bless = SpellCard(name="Bless", generic_mana=5, sp_mana="blue", description="Give a creature invulnerability.", effect="add invuln creatureid")
 wingify = SpellCard(name="Wingify", generic_mana=2, sp_mana="blue", description="Give a creature flying.|wingardium leviosa", effect="add flying creatureid")
 eldritch_blast = SpellCard(name="Eldritch Blast", generic_mana=2, sp_mana="blue", description="Deal 2 damage to a target creature. Draw a card.", effect="damage 2 creatureid; draw 1")
+magic_missile = SpellCard(name="Magic Missile", generic_mana=1, sp_mana="blue", description="Deal 1 damage to a target creature. Decrease their attack by 1.", effect="damage 1 creatureid; dec att creatureid 1")
+
 # Green spell cards
 healing_word = SpellCard(name="Healing Word", generic_mana=1, sp_mana="green", description="Heal 2 damage from target creature.", effect="heal 2 creatureid")
 inspiration = SpellCard(name="Inspiration", generic_mana=2, sp_mana="green", description="Increase a creature's endurance by 1 when it blocks an attack.", effect="castinc creatureid end 1")
