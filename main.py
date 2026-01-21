@@ -17,6 +17,7 @@ CARDS_PATH = os.path.join(ASSETS_PATH, "cards")
 TEMP_PATH = os.path.join(ASSETS_PATH, "temp")
 PLACEHOLDER_PATH = os.path.join(ASSETS_PATH, "placeholder.png")
 SILK_PATH = os.path.join(ASSETS_PATH, "fonts", "Silkscreen-Regular.ttf")
+HAS_PLAYED_LAND = False
 
 os.makedirs(TEMP_PATH, exist_ok=True)
 
@@ -32,13 +33,26 @@ creature_hitboxes = []
 hovered_card_id = None
 selected_card_id = None
 creature_deck_rect = None
+label_rects = {}
+label_draw_queue = []
+popup_state = {
+    "visible": False,
+    "message": "",
+    "rect": None,
+    "close_rect": None,
+    "lines": [],
+    "font_size": 16,
+}
+popup_shown = False
 
 try:
     card_font = pygame.font.Font(SILK_PATH, 18)
     menu_font = pygame.font.Font(SILK_PATH, 16)
+    label_font = pygame.font.Font(SILK_PATH, 14)
 except Exception:
     card_font = pygame.font.Font(None, 18)
     menu_font = pygame.font.Font(None, 16)
+    label_font = pygame.font.Font(None, 14)
 
 context_menu = {"visible": False, "rects": [], "actions": []}
 
@@ -182,8 +196,8 @@ def render_land_image(card_dict, x, y, tapped=False):
     return rect
 
 def announce(message):
-  # use aseprite font from assets/fonts/Silkscreen-Regular.ttf
-    font = pygame.font.Font(None, 36)
+    # use silkscreen font from assets/fonts/Silkscreen-Regular.ttf
+    font = pygame.font.Font(SILK_PATH, 36)
     text = font.render(message, True, (255, 255, 255))
     text_rect = text.get_rect()
     text_rect.center = (WIDTH // 2, HEIGHT // 2)
@@ -220,9 +234,6 @@ def render_hand(game_state, player):
     x = HAND_MARGIN
     base_y = HEIGHT - HAND_MARGIN
 
-    if creature_deck_rect:
-        x = creature_deck_rect.right + CARD_SPACING
-
     draw_queue = []
     for gi, group_name in enumerate(ordered_groups):
         for card_id, card_dict in grouped[group_name]:
@@ -251,9 +262,11 @@ def render_hand(game_state, player):
         hand_hitboxes.append({"id": card_id, "rect": rect})
 
 
-def render_creature_row(game_state, player, y, align_right=False):
+def render_creature_row(game_state, player, y, align="left", filter_fn=None):
     global creature_hitboxes
     creatures = list(game_state[player]["creatures"].items())
+    if filter_fn:
+        creatures = [(cid, cdata) for cid, cdata in creatures if filter_fn(cdata)]
     if not creatures:
         return
 
@@ -261,8 +274,10 @@ def render_creature_row(game_state, player, y, align_right=False):
     card_width = max(1, int(placeholder.width * CARD_SCALE))
     total_width = (card_width * len(creatures)) + CARD_SPACING * (len(creatures) - 1)
 
-    if align_right:
+    if align == "right":
         x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
+    elif align == "center":
+        x = max(HAND_MARGIN, (WIDTH - total_width) // 2)
     else:
         x = HAND_MARGIN
 
@@ -273,7 +288,7 @@ def render_creature_row(game_state, player, y, align_right=False):
         x += rect.width + CARD_SPACING
 
 
-def render_land_row(game_state, player, y, align_right=False):
+def render_land_row(game_state, player, y, align="left"):
     global land_hitboxes
     lands = list(game_state[player]["lands"].items())
     if not lands:
@@ -283,8 +298,10 @@ def render_land_row(game_state, player, y, align_right=False):
     card_width = max(1, int(placeholder.width * CARD_SCALE))
     total_width = (card_width * len(lands)) + CARD_SPACING * (len(lands) - 1)
 
-    if align_right:
+    if align == "right":
         x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
+    elif align == "center":
+        x = max(HAND_MARGIN, (WIDTH - total_width) // 2)
     else:
         x = HAND_MARGIN
 
@@ -296,52 +313,153 @@ def render_land_row(game_state, player, y, align_right=False):
         x += rect.width + CARD_SPACING
 
 
+def render_enemy_hand(game_state, player, y, align="center"):
+    enemy = wiz.p2 if player == wiz.p1 else wiz.p1
+    hand = list(game_state[enemy]["hand"].items())
+    if not hand:
+        return
+
+    placeholder = load_pil_image(PLACEHOLDER_PATH)
+    card_width = max(1, int(placeholder.width * CARD_SCALE))
+    total_width = (card_width * len(hand)) + CARD_SPACING * (len(hand) - 1)
+
+    if align == "right":
+        x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
+    elif align == "center":
+        x = max(HAND_MARGIN, (WIDTH - total_width) // 2)
+    else:
+        x = HAND_MARGIN
+
+    for _, card_dict in hand:
+        rect = render_image(card_dict, x, y)
+        x += rect.width + CARD_SPACING
+
+
+def render_graveyard_row(game_state, player, y, align="right"):
+    graveyard = list(game_state[player].get("graveyard", []))
+    if not graveyard:
+        return
+
+    placeholder = load_pil_image(PLACEHOLDER_PATH)
+    card_width = max(1, int(placeholder.width * CARD_SCALE))
+    total_width = (card_width * len(graveyard)) + CARD_SPACING * (len(graveyard) - 1)
+
+    if align == "right":
+        x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
+    elif align == "center":
+        x = max(HAND_MARGIN, (WIDTH - total_width) // 2)
+    else:
+        x = HAND_MARGIN
+
+    for card_dict in graveyard:
+        rect = render_image(card_dict, x, y)
+        x += rect.width + CARD_SPACING
+
+
+def draw_label(text, x, y, align="left", key=None, draw_bg=True):
+    label_surface = label_font.render(text, True, (240, 240, 240))
+    rect = label_surface.get_rect()
+    if align == "center":
+        rect.midtop = (x, y)
+    elif align == "right":
+        rect.topright = (x, y)
+    else:
+        rect.topleft = (x, y)
+    pad = 4
+    if draw_bg:
+        bg = pygame.Surface((rect.width + pad * 2, rect.height + pad * 2), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 140))
+        screen.blit(bg, (rect.x - pad, rect.y - pad))
+    screen.blit(label_surface, rect)
+    if key:
+        label_rects[key] = pygame.Rect(rect.x - pad, rect.y - pad, rect.width + pad * 2, rect.height + pad * 2)
+
+
+def render_zone_labels():
+    for text, x, y, align, key, draw_bg in label_draw_queue:
+        draw_label(text, x, y, align=align, key=key, draw_bg=draw_bg)
+
+
 def render_battlefield(game_state, player):
-    global land_hitboxes, creature_hitboxes
+    global land_hitboxes, creature_hitboxes, label_rects, label_draw_queue
     land_hitboxes = []
     creature_hitboxes = []
+    label_rects = {}
+    label_draw_queue = []
 
     enemy = wiz.p2 if player == wiz.p1 else wiz.p1
     placeholder = load_pil_image(PLACEHOLDER_PATH)
     card_height = max(1, int(placeholder.height * CARD_SCALE))
     row_gap = max(12, int(card_height * 0.2))
+    label_height = label_font.get_linesize()
+    label_gap = max(6, int(card_height * 0.1))
 
-    top_creatures_y = HAND_MARGIN + card_height
-    top_lands_y = top_creatures_y + card_height + row_gap
+    def queue_zone_label(text, x, y, align="left", key=None, draw_bg=True):
+        label_draw_queue.append((text, x, y, align, key, draw_bg))
 
-    bottom_hand_y = HEIGHT - HAND_MARGIN
-    bottom_lands_y = bottom_hand_y - card_height - row_gap
-    bottom_creatures_y = bottom_lands_y - card_height - row_gap
+    def is_active_creature(creature_entry):
+        card = creature_entry.get("card", {})
+        status = str(card.get("status", "")).lower()
+        return bool(card.get("tapped")) or "attack" in status or "block" in status
 
-    render_creature_row(game_state, enemy, top_creatures_y, align_right=False)
-    render_land_row(game_state, enemy, top_lands_y, align_right=False)
-    render_land_row(game_state, player, bottom_lands_y, align_right=False)
-    render_creature_row(game_state, player, bottom_creatures_y, align_right=True)
+    enemy_active_count = sum(
+        1
+        for cdata in game_state[enemy]["creatures"].values()
+        if is_active_creature(cdata)
+    )
 
-def render_creature_deck(game_state, player):
-    global creature_deck_rect
-    creatures = game_state[player]["creatures"]
+    top_label_y = HAND_MARGIN + 200
+    top_creatures_y = top_label_y + label_height + label_gap + card_height
 
-    placeholder = load_pil_image(PLACEHOLDER_PATH)
-    card_width = max(1, int(placeholder.width * CARD_SCALE))
-    card_height = max(1, int(placeholder.height * CARD_SCALE))
+    bottom_row_y = HEIGHT - HAND_MARGIN
+    bottom_label_y = bottom_row_y - card_height - label_height - label_gap
 
-    x = HAND_MARGIN
-    y = HEIGHT - HAND_MARGIN
-    deck_path = os.path.join(CARDS_PATH, "deck.png")
-    deck_dict = {"image_path": deck_path, "name": "deck"}
-    creature_deck_rect = render_image(deck_dict, x, y)
+    min_middle_label_y = top_creatures_y + row_gap
+    max_middle_label_y = bottom_label_y - label_height - label_gap - card_height - row_gap
+    middle_label_y = (top_creatures_y + bottom_label_y) // 2
+    middle_label_y = max(min_middle_label_y, middle_label_y)
+    middle_label_y = min(middle_label_y, max_middle_label_y if max_middle_label_y > min_middle_label_y else min_middle_label_y)
+    middle_creatures_y = middle_label_y + label_height + label_gap + card_height
 
-    pygame.draw.rect(screen, (245, 245, 245), creature_deck_rect, 2)
+    bottom_hand_y = bottom_row_y
+    bottom_lands_y = bottom_row_y
+    bottom_creatures_y = bottom_row_y
 
-    label = "Creatures"
-    count = len(creatures)
-    label_surface = card_font.render(f"{label}: {count}", True, (235, 235, 235))
-    label_rect = label_surface.get_rect()
-    label_rect.midtop = (creature_deck_rect.centerx, creature_deck_rect.top + 6)
-    screen.blit(label_surface, label_rect)
+    if enemy_active_count:
+        queue_zone_label("Enemy active creatures", WIDTH // 2, top_label_y, align="center", key="enemy_active")
+        render_creature_row(
+            game_state,
+            enemy,
+            top_creatures_y,
+            align="center",
+            filter_fn=is_active_creature,
+        )
 
-    return creature_deck_rect
+    creatures_label_y = middle_creatures_y - label_height - label_gap
+    queue_zone_label("Creatures", HAND_MARGIN, creatures_label_y, align="left", key="creatures")
+    render_creature_row(game_state, player, middle_creatures_y, align="left")
+
+    hand_label_y = bottom_hand_y - card_height - label_height - label_gap - 225
+    lands_label_y = bottom_lands_y - card_height - label_height - label_gap - 225
+    graveyard_label_y = bottom_creatures_y - card_height - label_height - label_gap - 225
+
+    mana_label_y = lands_label_y - label_height - 20
+    mana_gap = 12
+    mana_texts = ["Green: " + str(game_state[player]["green_mana"]), "Blue: " + str(game_state[player]["blue_mana"]), "Red: " + str(game_state[player]["red_mana"])]
+    mana_widths = [label_font.size(text)[0] for text in mana_texts]
+    mana_total_width = sum(mana_widths) + mana_gap * (len(mana_texts) - 1)
+    mana_start_x = (WIDTH - mana_total_width) // 2
+    mana_x = mana_start_x
+    for text, width in zip(mana_texts, mana_widths):
+        queue_zone_label(text, mana_x, mana_label_y, align="left", key=f"mana_{text.lower()}", draw_bg=False)
+        mana_x += width + mana_gap
+
+    queue_zone_label("Hand", HAND_MARGIN, hand_label_y, align="left", key="hand")
+    queue_zone_label("Lands", WIDTH // 2, lands_label_y, align="center", key="lands")
+    queue_zone_label("Graveyard", WIDTH - HAND_MARGIN, graveyard_label_y, align="right", key="graveyard")
+
+    render_land_row(game_state, player, bottom_lands_y, align="center")
+    render_graveyard_row(game_state, player, bottom_creatures_y, align="right")
 
 def show_land_context_menu(land_entry, pos):
     global context_menu
@@ -401,6 +519,113 @@ def get_selected_anchor():
             return rect.centerx, rect.top
     return None
 
+def get_popup_font(size):
+    try:
+        return pygame.font.Font(SILK_PATH, size)
+    except Exception:
+        return pygame.font.Font(None, size)
+
+
+def wrap_text(message, font, max_width):
+    words = message.replace("\n", " \n ").split(" ")
+    lines = []
+    current = []
+    for word in words:
+        if word == "\n":
+            lines.append(" ".join(current).strip())
+            current = []
+            continue
+        test_line = " ".join(current + [word]).strip()
+        if font.size(test_line)[0] <= max_width or not current:
+            current.append(word)
+        else:
+            lines.append(" ".join(current).strip())
+            current = [word]
+    if current:
+        lines.append(" ".join(current).strip())
+    return [line for line in lines if line]
+
+
+def popup(message):
+    global popup_state
+    message = str(message or "").strip()
+    if not message:
+        popup_state["visible"] = False
+        return
+
+    max_width = int(WIDTH * 0.65)
+    max_height = int(HEIGHT * 0.4)
+    font_size = 20
+    min_font_size = 12
+
+    lines = []
+    while font_size >= min_font_size:
+        font = get_popup_font(font_size)
+        lines = wrap_text(message, font, max_width)
+        line_height = font.get_linesize()
+        text_height = line_height * len(lines)
+        if text_height <= max_height:
+            break
+        font_size -= 1
+
+    popup_state.update(
+        {
+            "visible": True,
+            "message": message,
+            "lines": lines,
+            "font_size": font_size,
+        }
+    )
+
+
+def render_popup():
+    if not popup_state.get("visible"):
+        return
+
+    font = get_popup_font(popup_state.get("font_size", 16))
+    lines = popup_state.get("lines", [])
+    if not lines:
+        return
+
+    line_height = font.get_linesize()
+    text_width = max(font.size(line)[0] for line in lines)
+    text_height = line_height * len(lines)
+    pad = 12
+
+    rect_width = min(int(WIDTH * 0.7), text_width + pad * 2 + 20)
+    rect_height = min(int(HEIGHT * 0.5), text_height + pad * 2 + 12)
+    rect = pygame.Rect(0, 0, rect_width, rect_height)
+    rect.center = (WIDTH // 2, HEIGHT // 2)
+
+    bg = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    bg.fill((0, 0, 0, 190))
+    screen.blit(bg, rect.topleft)
+    # pygame.draw.rect(screen, (220, 220, 100), rect, 1)
+
+    close_size = 18
+    close_rect = pygame.Rect(
+        rect.right - close_size - pad,
+        rect.top + pad,
+        close_size,
+        close_size,
+    )
+    pygame.draw.rect(screen, (180, 60, 60), close_rect, 0)
+    pygame.draw.rect(screen, (255, 220, 220), close_rect, 1)
+    close_font = get_popup_font(12)
+    close_surface = close_font.render("X", True, (255, 255, 255))
+    close_text_rect = close_surface.get_rect(center=close_rect.center)
+    screen.blit(close_surface, close_text_rect)
+
+    text_x = rect.left + pad
+    text_y = rect.top + pad + 6
+    for line in lines:
+        text_surface = font.render(line, True, (245, 245, 245))
+        screen.blit(text_surface, (text_x, text_y))
+        text_y += line_height
+
+    popup_state["rect"] = rect
+    popup_state["close_rect"] = close_rect
+
 def move_selected_to_creatures(game_state, player):
     global selected_card_id
     if not selected_card_id:
@@ -412,13 +637,33 @@ def move_selected_to_creatures(game_state, player):
     generic_cost = card.get("generic_mana", 0)
     color_cost = card.get("sp_mana", "") or None
     if not wiz.game.check_mana_cost(player, generic_cost, color_cost):
-        announce("Insufficient mana")
+        popup("Insufficient mana")
         return False
     if not wiz.game.pay_mana(player, generic_cost, color_cost):
-        announce("Insufficient mana")
+        popup("Insufficient mana")
         return False
     if not wiz.game.play_creature(player, selected_card_id):
         return False
+    selected_card_id = None
+    return True
+
+
+def move_selected_to_lands(game_state, player):
+    global HAS_PLAYED_LAND
+    global selected_card_id
+    if not selected_card_id:
+        return False
+    hand = game_state[player]["hand"]
+    card = hand.get(str(selected_card_id))
+    if not card or card.get("type") != "Land":
+        return False
+    
+    if not HAS_PLAYED_LAND:
+      wiz.play_land(selected_card_id, player=player)
+      HAS_PLAYED_LAND = True
+    else:
+      announce("You can only play one land per turn")
+      return False
     selected_card_id = None
     return True
 
@@ -427,7 +672,7 @@ def handle_target_selection(selected_id, target_id):
 
 # Handle left-click interactions
 def handle_left_click(game_state, player, pos):
-    global selected_card_id, context_menu
+    global selected_card_id, context_menu, popup_state
 
     if context_menu.get("visible"):
         clicked_option = False
@@ -443,10 +688,25 @@ def handle_left_click(game_state, player, pos):
         if clicked_option:
             return
 
-    # Click on creature deck to move selected card
-    if selected_card_id and creature_deck_rect and creature_deck_rect.collidepoint(pos):
-        if move_selected_to_creatures(game_state, player):
+    if popup_state.get("visible"):
+        close_rect = popup_state.get("close_rect")
+        popup_rect = popup_state.get("rect")
+        if close_rect and close_rect.collidepoint(pos):
+            popup_state["visible"] = False
             return
+        if popup_rect and popup_rect.collidepoint(pos):
+            return
+
+    # Click on label zones to move selected cards
+    if selected_card_id:
+        creatures_label = label_rects.get("creatures")
+        lands_label = label_rects.get("lands")
+        if creatures_label and creatures_label.collidepoint(pos):
+            if move_selected_to_creatures(game_state, player):
+                return
+        if lands_label and lands_label.collidepoint(pos):
+            if move_selected_to_lands(game_state, player):
+                return
 
     # Click on hand card to select/deselect
     for hit in reversed(hand_hitboxes):
@@ -476,6 +736,9 @@ def handle_right_click(game_state, player, pos):
         if hit["rect"].collidepoint(pos) and hit["owner"] == player:
             entry = game_state[player]["lands"].get(hit["id"])
             if entry:
+                tapped = entry.get("tapped", entry.get("card", {}).get("tapped", False))
+                if tapped:
+                    return
                 entry = {**entry, "id": hit["id"]}
                 show_land_context_menu(entry, pos)
             return
@@ -520,9 +783,14 @@ while running:
     screen.fill(BACKGROUND_COLOR)
     on_mouse_hover(state, wiz.current_player())
     render_battlefield(state, wiz.current_player())
-    render_creature_deck(state, wiz.current_player())
     render_hand(state, wiz.current_player())
+    render_zone_labels()
+    render_popup()
     render_context_menu()
+    if not popup_shown:
+        popup("Welcome to Wizard!\n1. Click on a creature card to select it and click on the labels to move them around.\n2. Click on a land card to select it and click on the labels to move it around."
+        "\n3. Click on a spell card to select it and click on the desired target.\n4. Click off to deselect a card.")
+        popup_shown = True
     if selected_card_id:
         anchor = get_selected_anchor()
         if anchor:
