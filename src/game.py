@@ -1510,21 +1510,15 @@ class GameEngine:
         
         triggers_fired = False
         
-        for player in [self.player1, self.player2]:
-            if player not in game_state:
-                continue
-                
-            player_data = game_state[player]
-            for creature_id, creature_data in player_data["creatures"].items():
+        if summoning_player in game_state:
+            creature_data = game_state[summoning_player]["creatures"].get(str(summoning_card_id))
+            if creature_data:
                 creature_card = creature_data["card"]
                 effect = creature_card.get("effect", "")
-                
                 if "summon?" in effect:
                     triggers_fired = True
                     self._info(f"{creature_card['name']} triggers (summon?).")
-                    
-                    # Execute the summon? effect on this creature
-                    self._execute_trigger_effect(summoning_player, summoning_card_id, effect, "summon?")
+                    self._execute_trigger_effect(summoning_player, str(summoning_card_id), effect, "summon?")
         
         if not triggers_fired:
             self._info("No summon triggers.")
@@ -1705,12 +1699,17 @@ class GameEngine:
                                     cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
                         self._info(f"All creatures {card_field} {'+' if sign*value>=0 else ''}{sign*value}.")
                     elif effect.get("global"):
-                        for cid, card in game_state[player]["hand"].items():
-                            if card.get("type") != "Creature":
+                        delta = sign * value
+                        for cid, cdata in game_state[player]["creatures"].items():
+                            target_card = cdata["card"]
+                            if card_field not in target_card:
                                 continue
-                            if card_field in card:
-                                card[card_field] += sign * value
-                        self._info(f"Hand creatures {card_field} {'+' if sign*value>=0 else ''}{sign*value}.")
+                            target_card[card_field] += delta
+                            if card_field == "attack":
+                                cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
+                            elif card_field == "defence":
+                                cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
+                        self._info(f"{player}'s creatures {card_field} {'+' if delta>=0 else ''}{delta}.")
                     else:
                         if card_field in creature_card:
                             old_value = creature_card[card_field]
@@ -1765,9 +1764,18 @@ class GameEngine:
 
                 elif effect["action"] == "draw":
                     value = effect["value"]
-                    for i in range(value):
-                        self.draw_card(player)
-                    self._info(f"{player} draws {value} card(s).")
+                    player_data = game_state.get(player, {})
+                    deck = player_data.get("deck", [])
+                    hand = player_data.get("hand", {})
+                    drawn = 0
+                    for _ in range(value):
+                        if not deck:
+                            self._warn(f"{player} cannot draw: deck is empty.")
+                            break
+                        card = deck.pop(0)
+                        hand[str(card["id"])] = card
+                        drawn += 1
+                    self._info(f"{player} draws {drawn} card(s).")
         
         # For grouped effects like "enter? inc att 1; inc end 1", the parser may split them
         # Look for follow-up effects without triggers that should be part of the same group
@@ -1795,12 +1803,11 @@ class GameEngine:
                                     target_card[card_field] += value
                         self._info(f"All creatures {card_field} +{value}.")
                     elif effect.get("global"):
-                        for cid, card in game_state[player]["hand"].items():
-                            if card.get("type") != "Creature":
-                                continue
-                            if card_field in card:
-                                card[card_field] += value
-                        self._info(f"Hand creatures {card_field} +{value}.")
+                        for cid, cdata in game_state[player]["creatures"].items():
+                            target_card = cdata["card"]
+                            if card_field in target_card:
+                                target_card[card_field] += value
+                        self._info(f"{player}'s creatures {card_field} +{value}.")
                     else:
                         if card_field in creature_card:
                             old_value = creature_card[card_field]

@@ -1,8 +1,9 @@
 import os
+import math
 import pygame
 from PIL import Image
 
-from src.modules.card_creator import create_card
+from src.modules.card_creator import create_card, update_card_stats
 from src.modules.utils import get_land_colors
 from src.wizard import Wizard
 
@@ -20,6 +21,12 @@ SILK_PATH = os.path.join(ASSETS_PATH, "fonts", "Silkscreen-Regular.ttf")
 HAS_PLAYED_LAND = False
 
 os.makedirs(TEMP_PATH, exist_ok=True)
+for filename in os.listdir(TEMP_PATH):
+    if filename.endswith(".png"):
+        try:
+            os.remove(os.path.join(TEMP_PATH, filename))
+        except OSError:
+            pass
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
@@ -30,11 +37,52 @@ pil_cache = {}
 hand_hitboxes = []
 land_hitboxes = []
 creature_hitboxes = []
+active_creature_hitboxes = []
 hovered_card_id = None
 selected_card_id = None
+active_selected_card_id = None
 creature_deck_rect = None
 label_rects = {}
 label_draw_queue = []
+view_player = None
+creature_rects = {}
+active_creature_rects = {}
+selected_blocker_id = None
+notifications = []
+attacker_select_id = None
+prev_creature_stats = {}
+prev_hand_ids = {}
+last_drawn_id = {}
+draw_animation = {
+    "active": False,
+    "card_id": None,
+    "card": None,
+    "start": None,
+    "end": None,
+    "start_ms": 0,
+    "duration_ms": 450,
+    "player": None,
+    "queue": [],
+}
+combat_prompt_state = {
+    "visible": False,
+    "mode": None,
+    "lines": [],
+    "rect": None,
+    "confirm_rect": None,
+    "cancel_rect": None,
+}
+hover_state = {
+    "card_id": None,
+    "start_ms": 0,
+    "card": None,
+    "rect": None,
+}
+hover_label_state = {
+    "visible": False,
+    "lines": [],
+    "anchor_rect": None,
+}
 popup_state = {
     "visible": False,
     "message": "",
@@ -100,11 +148,11 @@ def load_pil_image(path):
 def needs_temp_image(card_dict, creature_entry):
     if not creature_entry:
         return False
-    base_attack = creature_entry.get("base_attack")
-    base_defence = creature_entry.get("base_defence")
-    if base_attack is None or base_defence is None:
+    attack = card_dict.get("attack")
+    defence = card_dict.get("defence")
+    if attack is None or defence is None:
         return False
-    return card_dict.get("attack") != base_attack or card_dict.get("defence") != base_defence
+    return True
 
 
 def build_temp_image(card_id, card_dict):
@@ -114,7 +162,11 @@ def build_temp_image(card_id, card_dict):
     temp_name = f"{card_id}_{card_dict.get('attack')}_{card_dict.get('defence')}.png"
     temp_path = os.path.join(TEMP_PATH, temp_name)
     if not os.path.exists(temp_path):
-        create_card(card_obj, temp_path)
+        base_path = card_dict.get("image_path") or get_default_image_path(card_dict.get("name", ""))
+        if base_path and os.path.exists(base_path):
+            update_card_stats(card_obj, temp_path, base_path)
+        else:
+            create_card(card_obj, temp_path)
     return temp_path
 
 
@@ -179,6 +231,28 @@ def render_image(card_dict, x, y):
     return rect
 
 
+def render_image_rotated(card_dict, x, y, angle):
+    image_path = card_dict.get("image_path") or get_default_image_path(card_dict.get("name", ""))
+    pil_image = load_pil_image(image_path)
+    scaled_size = (
+        max(1, int(pil_image.width * CARD_SCALE)),
+        max(1, int(pil_image.height * CARD_SCALE)),
+    )
+    pil_image = pil_image.resize(scaled_size, Image.NEAREST)
+    surface = pygame.image.fromstring(pil_image.tobytes(), pil_image.size, "RGBA")
+    surface = pygame.transform.rotate(surface, angle)
+    rect = surface.get_rect()
+    rect.bottomleft = (x, y)
+    screen.blit(surface, rect)
+    return rect
+
+
+def is_vigilant_card(card_dict):
+    status = str(card_dict.get("status", "")).lower()
+    effect = str(card_dict.get("effect", "")).lower()
+    return "vigilant" in status or "vigilant" in effect or "notap" in status
+
+
 def render_land_image(card_dict, x, y, tapped=False):
     image_path = card_dict.get("image_path") or get_default_image_path(card_dict.get("name", ""))
     pil_image = load_pil_image(image_path)
@@ -195,28 +269,38 @@ def render_land_image(card_dict, x, y, tapped=False):
     screen.blit(surface, rect)
     return rect
 
-def announce(message):
-    # use silkscreen font from assets/fonts/Silkscreen-Regular.ttf
-    font = pygame.font.Font(SILK_PATH, 36)
-    text = font.render(message, True, (255, 255, 255))
-    text_rect = text.get_rect()
-    text_rect.center = (WIDTH // 2, HEIGHT // 2)
-    screen.blit(text, text_rect)
-    pygame.display.flip()
+announce_state = {"message": "", "until_ms": 0}
 
-    # remove the text after 2 seconds
-    pygame.time.wait(2000)
-    font.render("", True, (255, 255, 255))
-    text_rect = text.get_rect()
-    text_rect.center = (WIDTH // 2, HEIGHT // 2)
-    screen.blit(text, text_rect)
-    pygame.display.flip()
+def announce(message, duration_ms=2000):
+    message = str(message or "").strip()
+    if not message:
+        return
+    announce_state["message"] = message
+    announce_state["until_ms"] = pygame.time.get_ticks() + duration_ms
 
-def render_hand(game_state, player):
+def render_announce():
+    if not announce_state.get("message"):
+        return
+    if pygame.time.get_ticks() > announce_state.get("until_ms", 0):
+        announce_state["message"] = ""
+        return
+    try:
+        font = pygame.font.Font(SILK_PATH, 48)
+    except Exception:
+        font = pygame.font.Font(None, 48)
+    text = font.render(announce_state["message"], True, (255, 255, 255))
+    text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    screen.blit(text, text_rect)
+
+def render_hand(game_state, player, start_x=None, exclude_ids=None):
     global hand_hitboxes
     hand_hitboxes = []
 
     hand = game_state[player]["hand"]
+    if exclude_ids is None:
+        exclude_ids = set()
+    else:
+        exclude_ids = set(exclude_ids)
     grouped = {"Creature": [], "Land": [], "Spell": [], "Other": []}
     for card_id, card_dict in hand.items():
         card_type = card_dict.get("type", "Other")
@@ -231,7 +315,7 @@ def render_hand(game_state, player):
     hand_step = max(18, int(card_width * 0.4))
     group_gap = max(10, int(card_width * 0.2))
 
-    x = HAND_MARGIN
+    x = HAND_MARGIN if start_x is None else start_x
     base_y = HEIGHT - HAND_MARGIN
 
     draw_queue = []
@@ -242,33 +326,63 @@ def render_hand(game_state, player):
         if gi < len(ordered_groups) - 1:
             x += group_gap
 
+    last_id = last_drawn_id.get(player)
+    if last_id:
+        last_item = None
+        for i, (card_id, card_dict, card_x) in enumerate(draw_queue):
+            if card_id == last_id:
+                last_item = draw_queue.pop(i)
+                break
+        if last_item:
+            draw_queue.append(last_item)
+            x = HAND_MARGIN if start_x is None else start_x
+            for idx, (card_id, card_dict, _) in enumerate(draw_queue):
+                draw_queue[idx] = (card_id, card_dict, x)
+                x += hand_step
+
     # draw order: normal cards first, then hovered, then selected (on top)
     for card_id, card_dict, card_x in draw_queue:
         if card_id in (hovered_card_id, selected_card_id):
             continue
+        if card_id in exclude_ids:
+            if draw_animation.get("active") and draw_animation.get("card_id") == card_id and draw_animation.get("end") is None:
+                draw_animation["end"] = (card_x, base_y)
+            continue
         rect = render_image(card_dict, card_x, base_y)
-        hand_hitboxes.append({"id": card_id, "rect": rect})
+        hand_hitboxes.append({"id": card_id, "rect": rect, "card": card_dict, "zone": "hand"})
 
     for card_id, card_dict, card_x in draw_queue:
         if card_id != hovered_card_id or card_id == selected_card_id:
             continue
+        if card_id in exclude_ids:
+            if draw_animation.get("active") and draw_animation.get("card_id") == card_id and draw_animation.get("end") is None:
+                draw_animation["end"] = (card_x, base_y)
+            continue
         rect = render_image(card_dict, card_x, base_y - max(12, card_height // 8))
-        hand_hitboxes.append({"id": card_id, "rect": rect})
+        hand_hitboxes.append({"id": card_id, "rect": rect, "card": card_dict, "zone": "hand"})
 
     for card_id, card_dict, card_x in draw_queue:
         if card_id != selected_card_id:
             continue
+        if card_id in exclude_ids:
+            if draw_animation.get("active") and draw_animation.get("card_id") == card_id and draw_animation.get("end") is None:
+                draw_animation["end"] = (card_x, base_y)
+            continue
         rect = render_image(card_dict, card_x, base_y - max(20, card_height // 6))
-        hand_hitboxes.append({"id": card_id, "rect": rect})
+        hand_hitboxes.append({"id": card_id, "rect": rect, "card": card_dict, "zone": "hand"})
 
 
-def render_creature_row(game_state, player, y, align="left", filter_fn=None):
-    global creature_hitboxes
+def render_creature_row(game_state, player, y, align="left", filter_fn=None, attack_ids=None, rotate_attackers=False, animate=False):
+    global creature_hitboxes, creature_rects
     creatures = list(game_state[player]["creatures"].items())
     if filter_fn:
         creatures = [(cid, cdata) for cid, cdata in creatures if filter_fn(cdata)]
     if not creatures:
         return
+    if attack_ids is None:
+        attack_ids = set()
+    else:
+        attack_ids = set(str(cid) for cid in attack_ids)
 
     placeholder = load_pil_image(PLACEHOLDER_PATH)
     card_width = max(1, int(placeholder.width * CARD_SCALE))
@@ -283,9 +397,114 @@ def render_creature_row(game_state, player, y, align="left", filter_fn=None):
 
     for card_id, creature_entry in creatures:
         card_dict = creature_entry.get("card", {})
-        rect = render_image(card_dict, x, y)
-        creature_hitboxes.append({"id": card_id, "rect": rect, "owner": player})
+        should_rotate = rotate_attackers and str(card_id) in attack_ids and not is_vigilant_card(card_dict)
+        wobble = 0
+        if animate and hovered_card_id == card_id:
+            wobble = int(math.sin(pygame.time.get_ticks() / 140) * 3)
+        if should_rotate:
+            rect = render_image_rotated(card_dict, x, y + wobble, -90)
+        else:
+            rect = render_image(card_dict, x, y + wobble)
+        creature_hitboxes.append({"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "creatures"})
+        creature_rects[str(card_id)] = rect
+        if animate and selected_blocker_id == card_id:
+            pygame.draw.rect(screen, (100, 200, 255), rect.inflate(6, 6), 2)
         x += rect.width + CARD_SPACING
+
+
+def render_active_creature_deck(
+    game_state,
+    player,
+    y,
+    align="center",
+    filter_fn=None,
+    attack_ids=None,
+    attack_offset=0,
+    animate=False,
+    alert=False,
+    alert_ids=None,
+):
+    global creature_hitboxes, active_creature_hitboxes, active_creature_rects
+    active_creature_hitboxes = []
+    creatures = list(game_state[player]["creatures"].items())
+    if filter_fn:
+        creatures = [(cid, cdata) for cid, cdata in creatures if filter_fn(cdata)]
+    if not creatures:
+        return
+    if attack_ids is None:
+        attack_ids = set()
+    else:
+        attack_ids = set(str(cid) for cid in attack_ids)
+    if alert_ids is None:
+        alert_ids = set()
+    else:
+        alert_ids = set(str(cid) for cid in alert_ids)
+
+    placeholder = load_pil_image(PLACEHOLDER_PATH)
+    card_width = max(1, int(placeholder.width * CARD_SCALE))
+    card_height = max(1, int(placeholder.height * CARD_SCALE))
+    card_step = max(18, int(card_width * 0.4))
+    total_width = card_width + card_step * (len(creatures) - 1)
+
+    if align == "right":
+        x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
+    elif align == "center":
+        x = max(HAND_MARGIN, (WIDTH - total_width) // 2)
+    else:
+        x = HAND_MARGIN
+
+    draw_queue = []
+    for card_id, creature_entry in creatures:
+        card_dict = creature_entry.get("card", {})
+        draw_queue.append((card_id, card_dict, x))
+        x += card_step
+
+    extra_offset = max(8, int(card_height * 0.2)) if alert else 0
+
+    for card_id, card_dict, card_x in draw_queue:
+        if card_id in (hovered_card_id, active_selected_card_id):
+            continue
+        y_offset = attack_offset if str(card_id) in attack_ids else 0
+        anim_bob = 0
+        if animate:
+            anim_bob = int(math.sin((pygame.time.get_ticks() + card_x) / 240) * 2)
+        rect = render_image(card_dict, card_x, y + y_offset + anim_bob + extra_offset)
+        hit = {"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "active"}
+        active_creature_hitboxes.append(hit)
+        creature_hitboxes.append(hit)
+        active_creature_rects[str(card_id)] = rect
+        if alert and str(card_id) in alert_ids:
+            draw_pulse_outline(rect, (200, 60, 60), (255, 120, 120))
+
+    for card_id, card_dict, card_x in draw_queue:
+        if card_id != hovered_card_id or card_id == active_selected_card_id:
+            continue
+        y_offset = attack_offset if str(card_id) in attack_ids else 0
+        wobble = int(math.sin(pygame.time.get_ticks() / 140) * 3) if animate else 0
+        rect = render_image(card_dict, card_x, y - max(12, card_height // 8) + y_offset + wobble + extra_offset)
+        hit = {"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "active"}
+        active_creature_hitboxes.append(hit)
+        creature_hitboxes.append(hit)
+        active_creature_rects[str(card_id)] = rect
+        if animate:
+            draw_pulse_outline(rect, (255, 255, 255), (120, 200, 255))
+        if alert and str(card_id) in alert_ids:
+            draw_pulse_outline(rect, (200, 60, 60), (255, 120, 120))
+
+    for card_id, card_dict, card_x in draw_queue:
+        if card_id != active_selected_card_id:
+            continue
+        y_offset = attack_offset if str(card_id) in attack_ids else 0
+        wobble = int(math.sin(pygame.time.get_ticks() / 120) * 4) if animate else 0
+        rect = render_image(card_dict, card_x, y - max(20, card_height // 6) + y_offset + wobble + extra_offset)
+        hit = {"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "active"}
+        active_creature_hitboxes.append(hit)
+        creature_hitboxes.append(hit)
+        active_creature_rects[str(card_id)] = rect
+        if animate:
+            draw_pulse_outline(rect, (255, 215, 0), (255, 255, 255))
+        if alert and str(card_id) in alert_ids:
+            draw_pulse_outline(rect, (200, 60, 60), (255, 120, 120))
 
 
 def render_land_row(game_state, player, y, align="left"):
@@ -296,7 +515,9 @@ def render_land_row(game_state, player, y, align="left"):
 
     placeholder = load_pil_image(PLACEHOLDER_PATH)
     card_width = max(1, int(placeholder.width * CARD_SCALE))
-    total_width = (card_width * len(lands)) + CARD_SPACING * (len(lands) - 1)
+    card_height = max(1, int(placeholder.height * CARD_SCALE))
+    land_step = max(18, int(card_width * 0.4))
+    total_width = card_width + land_step * (len(lands) - 1)
 
     if align == "right":
         x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
@@ -305,12 +526,25 @@ def render_land_row(game_state, player, y, align="left"):
     else:
         x = HAND_MARGIN
 
+    draw_queue = []
     for card_id, land_entry in lands:
         card_dict = land_entry.get("card", {})
+        draw_queue.append((card_id, land_entry, card_dict, x))
+        x += land_step
+
+    for card_id, land_entry, card_dict, land_x in draw_queue:
+        if card_id == hovered_card_id:
+            continue
         tapped = land_entry.get("tapped", card_dict.get("tapped", False))
-        rect = render_land_image(card_dict, x, y, tapped=bool(tapped))
-        land_hitboxes.append({"id": card_id, "rect": rect, "owner": player, "card": card_dict})
-        x += rect.width + CARD_SPACING
+        rect = render_land_image(card_dict, land_x, y, tapped=bool(tapped))
+        land_hitboxes.append({"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "lands"})
+
+    for card_id, land_entry, card_dict, land_x in draw_queue:
+        if card_id != hovered_card_id:
+            continue
+        tapped = land_entry.get("tapped", card_dict.get("tapped", False))
+        rect = render_land_image(card_dict, land_x, y - max(12, card_height // 8), tapped=bool(tapped))
+        land_hitboxes.append({"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "lands"})
 
 
 def render_enemy_hand(game_state, player, y, align="center"):
@@ -380,10 +614,655 @@ def render_zone_labels():
         draw_label(text, x, y, align=align, key=key, draw_bg=draw_bg)
 
 
+def draw_pulse_outline(rect, color_a, color_b, width=2):
+    if not rect:
+        return
+    pulse = (pygame.time.get_ticks() // 200) % 2
+    color = color_a if pulse else color_b
+    pygame.draw.rect(screen, color, rect.inflate(6, 6), width)
+
+
+def get_deck_layout():
+    placeholder = load_pil_image(PLACEHOLDER_PATH)
+    card_width = max(1, int(placeholder.width * CARD_SCALE))
+    card_height = max(1, int(placeholder.height * CARD_SCALE))
+    deck_x = HAND_MARGIN
+    deck_y = HEIGHT - HAND_MARGIN
+    hand_start_x = HAND_MARGIN
+    return deck_x, deck_y, card_width, card_height, hand_start_x
+
+
+def render_deck_pile(game_state, player, deck_x, deck_y, shift_x=0):
+    deck = game_state.get(player, {}).get("deck", [])
+    if not deck:
+        return
+    draw_count = min(3, len(deck))
+    for i in range(draw_count - 1, -1, -1):
+        offset = i * 3
+        rect = render_image({"image_path": PLACEHOLDER_PATH}, deck_x + shift_x + offset, deck_y - offset)
+        pygame.draw.rect(screen, (30, 30, 30), rect, 1)
+
+
+def detect_draw_animation(game_state, player):
+    if not player:
+        return
+    hand = game_state.get(player, {}).get("hand", {})
+    current_ids = set(hand.keys())
+    prev_ids = prev_hand_ids.get(player)
+    if prev_ids is None:
+        prev_hand_ids[player] = current_ids
+        return
+    new_ids = list(current_ids - prev_ids)
+    if new_ids:
+        for card_id in new_ids:
+            draw_animation["queue"].append(
+                {
+                    "player": player,
+                    "card_id": card_id,
+                    "card": hand.get(card_id),
+                }
+            )
+
+    if draw_animation.get("queue") and not draw_animation.get("active"):
+        next_draw = draw_animation["queue"].pop(0)
+        card_id = next_draw.get("card_id")
+        card_dict = next_draw.get("card")
+        last_drawn_id[player] = card_id
+        deck_x, deck_y, _, _, _ = get_deck_layout()
+        draw_animation.update(
+            {
+                "active": True,
+                "card_id": card_id,
+                "card": card_dict,
+                "start": (deck_x, deck_y),
+                "end": None,
+                "start_ms": pygame.time.get_ticks(),
+                "player": player,
+            }
+        )
+    prev_hand_ids[player] = current_ids
+
+
+def render_draw_animation():
+    if not draw_animation.get("active"):
+        return
+    start = draw_animation.get("start")
+    end = draw_animation.get("end")
+    card = draw_animation.get("card")
+    if not start or not end or not card:
+        return
+    now = pygame.time.get_ticks()
+    elapsed = now - draw_animation.get("start_ms", 0)
+    duration = max(1, draw_animation.get("duration_ms", 450))
+    t = min(1.0, elapsed / duration)
+    ease = t * (2 - t)
+    x = int(start[0] + (end[0] - start[0]) * ease)
+    y = int(start[1] + (end[1] - start[1]) * ease)
+    render_image(card, x, y)
+    if t >= 1.0:
+        draw_animation["active"] = False
+        if draw_animation.get("queue"):
+            next_draw = draw_animation["queue"].pop(0)
+            card_id = next_draw.get("card_id")
+            card_dict = next_draw.get("card")
+            last_drawn_id[next_draw.get("player")] = card_id
+            deck_x, deck_y, _, _, _ = get_deck_layout()
+            draw_animation.update(
+                {
+                    "active": True,
+                    "card_id": card_id,
+                    "card": card_dict,
+                    "start": (deck_x, deck_y),
+                    "end": None,
+                    "start_ms": pygame.time.get_ticks(),
+                    "player": next_draw.get("player"),
+                }
+            )
+
+
+def add_notification(message):
+    message = str(message or "").strip()
+    if not message:
+        return
+    notifications.insert(0, message)
+    del notifications[3:]
+
+
+def render_notifications():
+    if not notifications:
+        return
+    x = HAND_MARGIN
+    y = HAND_MARGIN
+    for message in notifications[:3]:
+        draw_label(message, x, y, align="left", draw_bg=True)
+        y += label_font.get_linesize() + 12
+
+
+def detect_creature_stat_changes(game_state):
+    global prev_creature_stats
+    current = {}
+    changed = False
+    for player in (wiz.p1, wiz.p2):
+        creatures = game_state.get(player, {}).get("creatures", {})
+        for cid, cdata in creatures.items():
+            card = cdata.get("card", {})
+            attack = card.get("attack")
+            defence = card.get("defence")
+            current[(player, str(cid))] = (attack, defence)
+
+    for key, stats in current.items():
+        prev = prev_creature_stats.get(key)
+        if prev and stats:
+            prev_att, prev_def = prev
+            new_att, new_def = stats
+            if new_att is not None and prev_att is not None and new_att != prev_att:
+                player, cid = key
+                name = game_state[player]["creatures"].get(cid, {}).get("card", {}).get("name", cid)
+                delta = new_att - prev_att
+                verb = "gains" if delta > 0 else "loses"
+                add_notification(f"{name} {verb} {abs(delta)} attack")
+                card_dict = game_state[player]["creatures"][cid]["card"]
+                base_path = card_dict.get("image_path")
+                if base_path and os.path.exists(base_path):
+                    update_card_stats(wiz.game._reconstruct_card(card_dict), base_path, base_path)
+                    changed = True
+            if new_def is not None and prev_def is not None and new_def != prev_def:
+                player, cid = key
+                name = game_state[player]["creatures"].get(cid, {}).get("card", {}).get("name", cid)
+                delta = new_def - prev_def
+                verb = "gains" if delta > 0 else "loses"
+                add_notification(f"{name} {verb} {abs(delta)} defence")
+                card_dict = game_state[player]["creatures"][cid]["card"]
+                base_path = card_dict.get("image_path")
+                if base_path and os.path.exists(base_path):
+                    update_card_stats(wiz.game._reconstruct_card(card_dict), base_path, base_path)
+                    changed = True
+
+    prev_creature_stats = current
+    if changed:
+        wiz.game._save_state(game_state)
+
+
+def build_combat_summary_lines(pre_state, damage_queue):
+    lines = []
+    attacker_player = pre_state.get("current_player")
+    defender_player = wiz.p2 if attacker_player == wiz.p1 else wiz.p1
+    attackers = pre_state.get("combat", {}).get("attackers", [])
+    blocks = pre_state.get("combat", {}).get("blocks", {})
+
+    damage_to = {}
+    for entry in damage_queue:
+        if entry.get("target") != "creature":
+            continue
+        key = (entry.get("target_player"), str(entry.get("target_id")))
+        damage_to[key] = damage_to.get(key, 0) + entry.get("damage", 0)
+
+    for attacker_id in attackers:
+        blocker_ids = blocks.get(attacker_id, [])
+        if not blocker_ids:
+            continue
+        attacker_entry = pre_state.get(attacker_player, {}).get("creatures", {}).get(str(attacker_id), {})
+        attacker_card = attacker_entry.get("card", {})
+        attacker_name = attacker_card.get("name", str(attacker_id))
+        attacker_stats = (attacker_card.get("attack", "-"), attacker_card.get("defence", "-"))
+        attacker_damage = damage_to.get((attacker_player, str(attacker_id)), 0)
+        attacker_dead = (
+            attacker_card.get("defence") is not None
+            and attacker_card.get("defence") - attacker_damage <= 0
+        )
+
+        for blocker_id in blocker_ids:
+            blocker_entry = pre_state.get(defender_player, {}).get("creatures", {}).get(str(blocker_id), {})
+            blocker_card = blocker_entry.get("card", {})
+            blocker_name = blocker_card.get("name", str(blocker_id))
+            blocker_stats = (blocker_card.get("attack", "-"), blocker_card.get("defence", "-"))
+            blocker_damage = damage_to.get((defender_player, str(blocker_id)), 0)
+            blocker_dead = (
+                blocker_card.get("defence") is not None
+                and blocker_card.get("defence") - blocker_damage <= 0
+            )
+
+            if attacker_dead and blocker_dead:
+                outcome = "both die"
+            elif blocker_dead:
+                outcome = f"{blocker_name} dies"
+            elif attacker_dead:
+                outcome = f"{attacker_name} dies"
+            else:
+                outcome = "no deaths"
+
+            lines.append(
+                f"{attacker_name} ({attacker_stats[0]}/{attacker_stats[1]}) -> "
+                f"{blocker_name} ({blocker_stats[0]}/{blocker_stats[1]}) ({outcome})"
+            )
+
+    if not lines:
+        lines.append("No creature combat this turn.")
+
+    return lines
+
+
+def build_hover_label_lines(card_dict):
+    description = str(card_dict.get("description", "") or "")
+    parts = description.split("|", 1)
+    rules_text = parts[0].strip()
+    flavor_text = parts[1].strip() if len(parts) > 1 else ""
+
+    max_width = int(WIDTH * 0.35)
+    lines = []
+    if rules_text:
+        lines.extend(wrap_text(rules_text, label_font, max_width))
+    else:
+        name = str(card_dict.get("name", "") or "").strip()
+        if name:
+            lines.append(name)
+    lines.append("------")
+    if flavor_text:
+        lines.extend(wrap_text(flavor_text, label_font, max_width))
+    else:
+        lines.append("N/A")
+
+    lines.append("")
+    generic = card_dict.get("generic_mana", 0)
+    sp_mana = str(card_dict.get("sp_mana", "") or "").strip()
+    sp_display = sp_mana if sp_mana else "none"
+    lines.append(f"cost: {generic} + {sp_display}")
+
+    if "attack" in card_dict and card_dict.get("attack") is not None:
+        lines.append(f"att: {card_dict.get('attack')}")
+    if "defence" in card_dict and card_dict.get("defence") is not None:
+        lines.append(f"end: {card_dict.get('defence')}")
+
+    return lines
+
+
+def render_hover_label():
+    if not hover_label_state.get("visible"):
+        return
+    lines = hover_label_state.get("lines", [])
+    if not lines:
+        return
+
+    line_height = label_font.get_linesize()
+    text_width = max(label_font.size(line)[0] for line in lines)
+    pad = 6
+    width = text_width + pad * 2
+    height = line_height * len(lines) + pad * 2
+
+    anchor_rect = hover_label_state.get("anchor_rect")
+    if anchor_rect:
+        x = anchor_rect.right + 8
+        y = anchor_rect.top
+    else:
+        x, y = pygame.mouse.get_pos()
+
+    if x + width > WIDTH - HAND_MARGIN:
+        if anchor_rect:
+            x = anchor_rect.left - width - 8
+        else:
+            x = WIDTH - HAND_MARGIN - width
+    if y + height > HEIGHT - HAND_MARGIN:
+        y = HEIGHT - HAND_MARGIN - height
+    x = max(HAND_MARGIN, x)
+    y = max(HAND_MARGIN, y)
+
+    bg = pygame.Surface((width, height), pygame.SRCALPHA)
+    bg.fill((20, 20, 20, 210))
+    screen.blit(bg, (x, y))
+    # pygame.draw.rect(screen, (220, 220, 220), pygame.Rect(x, y, width, height), 1)
+
+    text_x = x + pad
+    text_y = y + pad
+    for line in lines:
+        text_surface = label_font.render(line, True, (245, 245, 245))
+        screen.blit(text_surface, (text_x, text_y))
+        text_y += line_height
+
+
+def get_combat_attacker():
+    return getattr(wiz, "combat_attacker", None)
+
+
+def get_combat_defender():
+    return getattr(wiz, "combat_defender", None)
+
+
+def get_attacker_ids(game_state):
+    if getattr(wiz, "combat_phase", None) == "attackers":
+        return list(getattr(wiz, "pending_attackers", []))
+    if getattr(wiz, "combat_phase", None) == "blockers":
+        attackers = game_state.get("combat", {}).get("attackers", [])
+        if attackers:
+            return attackers
+        return list(getattr(wiz, "pending_attackers", []))
+    return []
+
+
+def get_combat_button_labels(game_state, player, action_label_y, label_height):
+    buttons = []
+    y = action_label_y + label_height + 8
+    confirm_x = WIDTH - HAND_MARGIN - 220
+
+    if getattr(wiz, "combat_phase", None) == "attackers" and getattr(wiz, "priority_player", None) == player:
+        if getattr(wiz, "pending_attackers", []):
+            buttons.append(("Confirm", confirm_x, y, "combat_confirm"))
+    elif getattr(wiz, "combat_phase", None) == "blockers" and getattr(wiz, "priority_player", None) == player:
+        buttons.append(("Confirm", confirm_x, y, "combat_confirm"))
+    return buttons
+
+
+def build_attackers_preview_lines(game_state, attacker_ids):
+    lines = ["Attackers:"]
+    creatures = game_state.get(get_combat_attacker() or "", {}).get("creatures", {})
+    if not attacker_ids:
+        lines.append("(none)")
+    else:
+        for cid in attacker_ids:
+            card = creatures.get(str(cid), {}).get("card", {})
+            name = card.get("name", str(cid))
+            stats = f"{card.get('attack', '-')}/{card.get('defence', '-')}"
+            lines.append(f"- {name} ({stats})")
+    return lines
+
+
+def build_blockers_preview_lines(game_state, block_assignments):
+    lines = ["Blocks:"]
+    defender = get_combat_defender()
+    attacker = get_combat_attacker()
+    defender_creatures = game_state.get(defender or "", {}).get("creatures", {})
+    attacker_creatures = game_state.get(attacker or "", {}).get("creatures", {})
+    if not block_assignments:
+        lines.append("No defenders declared.")
+    else:
+        for attacker_id, blocker_ids in block_assignments.items():
+            atk_card = attacker_creatures.get(str(attacker_id), {}).get("card", {})
+            atk_name = atk_card.get("name", str(attacker_id))
+            for blocker_id in blocker_ids:
+                blk_card = defender_creatures.get(str(blocker_id), {}).get("card", {})
+                blk_name = blk_card.get("name", str(blocker_id))
+                lines.append(f"- {blk_name} -> {atk_name}")
+
+
+def show_combat_prompt(mode, lines):
+    combat_prompt_state.update(
+        {
+            "visible": True,
+            "mode": mode,
+            "lines": lines,
+            "rect": None,
+            "confirm_rect": None,
+            "cancel_rect": None,
+        }
+    )
+
+
+def render_combat_prompt():
+    if not combat_prompt_state.get("visible"):
+        return
+
+    lines = combat_prompt_state.get("lines", [])
+    if not lines:
+        return
+
+    font = get_popup_font(18)
+    line_height = font.get_linesize()
+    text_width = max(font.size(line)[0] for line in lines)
+    text_height = line_height * len(lines)
+    pad = 12
+
+    rect_width = min(int(WIDTH * 0.7), text_width + pad * 2 + 20)
+    rect_height = min(int(HEIGHT * 0.5), text_height + pad * 2 + 36)
+    rect = pygame.Rect(0, 0, rect_width, rect_height)
+    rect.center = (WIDTH // 2, HEIGHT // 2)
+
+    bg = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    bg.fill((0, 0, 0, 190))
+    screen.blit(bg, rect.topleft)
+
+    text_x = rect.left + pad
+    text_y = rect.top + pad
+    for line in lines:
+        text_surface = font.render(line, True, (245, 245, 245))
+        screen.blit(text_surface, (text_x, text_y))
+        text_y += line_height
+
+    button_w = 90
+    button_h = 24
+    confirm_rect = pygame.Rect(rect.right - pad - button_w, rect.bottom - pad - button_h, button_w, button_h)
+    pygame.draw.rect(screen, (40, 120, 40), confirm_rect, 0)
+    pygame.draw.rect(screen, (220, 220, 220), confirm_rect, 1)
+    confirm_text = menu_font.render("Confirm", True, (255, 255, 255))
+    confirm_text_rect = confirm_text.get_rect(center=confirm_rect.center)
+    screen.blit(confirm_text, confirm_text_rect)
+
+    cancel_rect = pygame.Rect(confirm_rect.left - button_w - 8, confirm_rect.top, button_w, button_h)
+    pygame.draw.rect(screen, (120, 40, 40), cancel_rect, 0)
+    pygame.draw.rect(screen, (220, 220, 220), cancel_rect, 1)
+    cancel_text = menu_font.render("Cancel", True, (255, 255, 255))
+    cancel_text_rect = cancel_text.get_rect(center=cancel_rect.center)
+    screen.blit(cancel_text, cancel_text_rect)
+
+    combat_prompt_state["rect"] = rect
+    combat_prompt_state["confirm_rect"] = confirm_rect
+    combat_prompt_state["cancel_rect"] = cancel_rect
+
+
+def render_combat_lines(game_state):
+    if getattr(wiz, "combat_phase", None) != "blockers":
+        if attacker_select_id:
+            rect = creature_rects.get(str(attacker_select_id))
+            if rect:
+                pygame.draw.rect(screen, (255, 215, 0), rect.inflate(6, 6), 2)
+        return
+
+    attacker_ids = set(str(cid) for cid in get_attacker_ids(game_state))
+    pending_blocks = getattr(wiz, "pending_blocks", {})
+
+    for attacker_id, blocker_ids in pending_blocks.items():
+        attacker_rect = active_creature_rects.get(str(attacker_id)) or creature_rects.get(str(attacker_id))
+        if not attacker_rect:
+            continue
+        for blocker_id in blocker_ids:
+            blocker_rect = creature_rects.get(str(blocker_id))
+            if not blocker_rect:
+                continue
+            start = blocker_rect.center
+            end = attacker_rect.midbottom
+            pygame.draw.line(screen, (60, 200, 60), start, end, 3)
+
+    if selected_blocker_id:
+        attacker_rect = None
+        if hovered_card_id and str(hovered_card_id) in attacker_ids:
+            attacker_rect = active_creature_rects.get(str(hovered_card_id))
+        if attacker_rect:
+            blocker_rect = creature_rects.get(str(selected_blocker_id))
+            if blocker_rect:
+                pygame.draw.line(screen, (255, 255, 255), blocker_rect.center, attacker_rect.midbottom, 2)
+        else:
+            blocker_rect = creature_rects.get(str(selected_blocker_id))
+            if blocker_rect:
+                pygame.draw.line(screen, (255, 255, 255), blocker_rect.center, pygame.mouse.get_pos(), 1)
+                pygame.draw.rect(screen, (100, 200, 255), blocker_rect.inflate(6, 6), 2)
+
+    if attacker_select_id:
+        rect = creature_rects.get(str(attacker_select_id))
+        if rect:
+            pygame.draw.rect(screen, (255, 215, 0), rect.inflate(6, 6), 2)
+
+
+def reset_combat_ui():
+    global selected_blocker_id, attacker_select_id
+    selected_blocker_id = None
+    attacker_select_id = None
+    if getattr(wiz, "combat_phase", None):
+        wiz.cancel_combat()
+        game_state = wiz.game.get_game_state()
+        attacker = get_combat_attacker()
+        attackers = game_state.get("combat", {}).get("attackers", [])
+        if attacker and attackers:
+            creatures = game_state.get(attacker, {}).get("creatures", {})
+
+            def remove_status(card, status):
+                existing = str(card.get("status", "") or "")
+                statuses = [s.strip() for s in existing.split(",") if s.strip()]
+                if status in statuses:
+                    statuses = [s for s in statuses if s != status]
+                    card["status"] = ", ".join(statuses)
+
+            for cid in attackers:
+                entry = creatures.get(str(cid))
+                if not entry:
+                    continue
+                card = entry.get("card", {})
+                if card.get("tapped"):
+                    card["tapped"] = 0
+                remove_status(card, "attack")
+            wiz.game._save_state(game_state)
+    combat_prompt_state["visible"] = False
+    # add_notification("Combat cancelled")
+
+
+def start_new_turn_ui():
+    global HAS_PLAYED_LAND, selected_card_id, active_selected_card_id
+    HAS_PLAYED_LAND = False
+    selected_card_id = None
+    active_selected_card_id = None
+    reset_combat_ui()
+    wiz.start_new_turn()
+    add_notification("Turn ended")
+    announce(f"{wiz.current_player()}'s turn")
+
+
+def toggle_attacker(game_state, player, creature_id):
+    global attacker_select_id
+    creature_id = str(creature_id)
+    if getattr(wiz, "combat_phase", None) is None:
+        wiz.begin_combat(player)
+    if getattr(wiz, "combat_phase", None) != "attackers" or getattr(wiz, "priority_player", None) != player:
+        return False
+    if not wiz.game.can_attack(player, creature_id):
+        popup("That creature cannot attack")
+        return False
+    pending = list(getattr(wiz, "pending_attackers", []))
+    if creature_id in pending:
+        pending.remove(creature_id)
+        add_notification("Attacker removed")
+        if attacker_select_id == creature_id:
+            attacker_select_id = None
+    else:
+        pending.append(creature_id)
+        creature = game_state[player]["creatures"].get(creature_id, {}).get("card", {})
+        add_notification(f"Attacker queued: {creature.get('name', creature_id)}")
+        attacker_select_id = creature_id
+    wiz.queue_attackers(player, pending)
+    if pending:
+        add_notification("Attackers queued")
+    else:
+        attacker_select_id = None
+    return True
+
+
+def assign_blocker(game_state, defender, blocker_id, attacker_id):
+    blocker_id = str(blocker_id)
+    attacker_id = str(attacker_id)
+    if getattr(wiz, "combat_phase", None) != "blockers" or getattr(wiz, "priority_player", None) != defender:
+        return False
+    attacker_ids = set(str(cid) for cid in get_attacker_ids(game_state))
+    if attacker_id not in attacker_ids:
+        popup("That creature is not attacking")
+        return False
+
+    defender_creatures = game_state[defender].get("creatures", {})
+    if blocker_id not in defender_creatures:
+        return False
+    if not wiz.game.can_block(blocker_id, attacker_id):
+        popup("That creature cannot block")
+        return False
+
+    new_blocks = {k: list(v) for k, v in getattr(wiz, "pending_blocks", {}).items()}
+    for a_id in list(new_blocks.keys()):
+        if blocker_id in new_blocks.get(a_id, []):
+            new_blocks[a_id] = [b for b in new_blocks[a_id] if b != blocker_id]
+            if not new_blocks[a_id]:
+                new_blocks.pop(a_id, None)
+
+    if attacker_id in new_blocks and blocker_id in new_blocks[attacker_id]:
+        new_blocks[attacker_id] = [b for b in new_blocks[attacker_id] if b != blocker_id]
+        if not new_blocks[attacker_id]:
+            new_blocks.pop(attacker_id, None)
+        add_notification("Blocker removed")
+    else:
+        lst = new_blocks.get(attacker_id, [])
+        lst.append(blocker_id)
+        new_blocks[attacker_id] = lst
+        blk_card = defender_creatures.get(blocker_id, {}).get("card", {})
+        atk_card = game_state.get(get_combat_attacker() or "", {}).get("creatures", {}).get(attacker_id, {}).get("card", {})
+        add_notification(f"Blocker queued: {blk_card.get('name', blocker_id)} -> {atk_card.get('name', attacker_id)}")
+
+    wiz.queue_blockers(defender, new_blocks)
+    return True
+
+
+def confirm_attackers(game_state):
+    global attacker_select_id
+    attacker = get_combat_attacker() or wiz.current_player()
+    pending = list(getattr(wiz, "pending_attackers", []))
+    if not pending:
+        return False
+    if getattr(wiz, "combat_phase", None) != "attackers":
+        return False
+    wiz.game.declare_attackers(attacker, pending)
+    wiz.pending_attackers = []
+    wiz.pass_priority_to_blocker()
+    add_notification("Attackers confirmed")
+    popup("Priority passed, assign blockers")
+    attacker_select_id = None
+    return True
+
+
+def confirm_blockers(game_state):
+    defender = get_combat_defender() or wiz.current_player()
+    pending = getattr(wiz, "pending_blocks", {})
+    if getattr(wiz, "combat_phase", None) != "blockers":
+        return False
+    wiz.game.declare_blockers(defender, pending)
+    wiz.pending_blocks = {}
+    attacker = get_combat_attacker()
+    pre_state = wiz.game.get_game_state()
+    wiz.game.calculate_combat_damage()
+    state_with_queue = wiz.game.get_game_state()
+    damage_queue = state_with_queue.get("combat", {}).get("damage_queue", [])
+    summary_lines = build_combat_summary_lines(pre_state, damage_queue)
+    wiz.game.resolve_damage_queue()
+    state = wiz.game.get_game_state()
+
+    wiz.combat_phase = None
+    wiz.priority_player = None
+    wiz.pending_attackers = []
+    wiz.pending_blocks = {}
+    wiz.combat_attacker = None
+    wiz.combat_defender = None
+
+    won = state.get(wiz.p1, {}).get("health", 0) <= 0 or state.get(wiz.p2, {}).get("health", 0) <= 0
+    loser = wiz.p1 if state.get(wiz.p1, {}).get("health", 0) <= 0 else wiz.p2 if state.get(wiz.p2, {}).get("health", 0) <= 0 else ""
+    opposing = wiz.p2 if defender == wiz.p1 else wiz.p1
+    wiz.priority_player = attacker or opposing
+    add_notification("Blockers confirmed")
+    add_notification("Combat resolved")
+    popup("\n".join(summary_lines))
+    if won:
+        add_notification(f"{loser} lost the game")
+    return True
+
+
 def render_battlefield(game_state, player):
-    global land_hitboxes, creature_hitboxes, label_rects, label_draw_queue
+    global land_hitboxes, creature_hitboxes, label_rects, label_draw_queue, active_creature_hitboxes
+    global creature_rects, active_creature_rects
     land_hitboxes = []
     creature_hitboxes = []
+    active_creature_hitboxes = []
+    creature_rects = {}
+    active_creature_rects = {}
     label_rects = {}
     label_draw_queue = []
 
@@ -402,11 +1281,7 @@ def render_battlefield(game_state, player):
         status = str(card.get("status", "")).lower()
         return bool(card.get("tapped")) or "attack" in status or "block" in status
 
-    enemy_active_count = sum(
-        1
-        for cdata in game_state[enemy]["creatures"].values()
-        if is_active_creature(cdata)
-    )
+    enemy_creatures = list(game_state[enemy]["creatures"].items())
 
     top_label_y = HAND_MARGIN + 200
     top_creatures_y = top_label_y + label_height + label_gap + card_height
@@ -425,19 +1300,41 @@ def render_battlefield(game_state, player):
     bottom_lands_y = bottom_row_y
     bottom_creatures_y = bottom_row_y
 
-    if enemy_active_count:
+    attacker_ids = get_attacker_ids(game_state)
+    attack_offset = max(6, int(card_height * 0.15))
+    enemy_alert = (
+        getattr(wiz, "combat_phase", None) == "blockers"
+        and getattr(wiz, "priority_player", None) == player
+    )
+    enemy_ready_ids = []
+    if enemy_alert and enemy == get_combat_attacker():
+        enemy_ready_ids = [str(cid) for cid in attacker_ids]
+    if enemy_creatures:
         queue_zone_label("Enemy active creatures", WIDTH // 2, top_label_y, align="center", key="enemy_active")
-        render_creature_row(
+        render_active_creature_deck(
             game_state,
             enemy,
             top_creatures_y,
             align="center",
-            filter_fn=is_active_creature,
+            filter_fn=None,
+            attack_ids=attacker_ids if enemy == get_combat_attacker() else [],
+            attack_offset=attack_offset,
+            animate=False,
+            alert=enemy_alert,
+            alert_ids=enemy_ready_ids,
         )
 
     creatures_label_y = middle_creatures_y - label_height - label_gap
     queue_zone_label("Creatures", HAND_MARGIN, creatures_label_y, align="left", key="creatures")
-    render_creature_row(game_state, player, middle_creatures_y, align="left")
+    render_creature_row(
+        game_state,
+        player,
+        middle_creatures_y,
+        align="left",
+        attack_ids=attacker_ids if player == get_combat_attacker() else [],
+        rotate_attackers=player == get_combat_attacker(),
+        animate=True,
+    )
 
     hand_label_y = bottom_hand_y - card_height - label_height - label_gap - 225
     lands_label_y = bottom_lands_y - card_height - label_height - label_gap - 225
@@ -457,6 +1354,31 @@ def render_battlefield(game_state, player):
     queue_zone_label("Hand", HAND_MARGIN, hand_label_y, align="left", key="hand")
     queue_zone_label("Lands", WIDTH // 2, lands_label_y, align="center", key="lands")
     queue_zone_label("Graveyard", WIDTH - HAND_MARGIN, graveyard_label_y, align="right", key="graveyard")
+
+    action_label_y = bottom_row_y - card_height - label_height - label_gap - 10
+    combat_buttons = get_combat_button_labels(game_state, player, action_label_y, label_height)
+    if combat_buttons:
+        for text, x, y, key in combat_buttons:
+            queue_zone_label(text, x, y, align="right", key=key)
+
+    priority_name = wiz.priority_player or wiz.current_player()
+    priority_health = game_state.get(priority_name, {}).get("health", 0)
+    queue_zone_label(
+        f"Priority: {priority_name} ({priority_health}/20)",
+        WIDTH - HAND_MARGIN,
+        HAND_MARGIN,
+        align="right",
+        key="priority",
+    )
+
+    queue_zone_label("Mulligan", WIDTH - HAND_MARGIN - 100, action_label_y + label_height + 8, align="right", key="mulligan")
+    queue_zone_label(
+        "End Turn",
+        WIDTH - HAND_MARGIN,
+        action_label_y + label_height + 8, # + label_height + 8,
+        align="right",
+        key="end_turn",
+    )
 
     render_land_row(game_state, player, bottom_lands_y, align="center")
     render_graveyard_row(game_state, player, bottom_creatures_y, align="right")
@@ -494,7 +1416,35 @@ def show_land_context_menu(land_entry, pos):
         "rect": pygame.Rect(x, y, menu_width, menu_height),
         "rects": rects,
         "actions": actions,
-        "land_id": land_entry.get("id")
+        "land_id": land_entry.get("id"),
+        "kind": "land",
+    }
+
+
+def show_hand_context_menu(card_entry, pos):
+    global context_menu
+    menu_width = 160
+    item_height = 22
+    options = [("Discard", "discard")]
+    menu_height = item_height * len(options) + 8
+    x, y = pos
+    x = min(x, WIDTH - menu_width - HAND_MARGIN)
+    y = min(y, HEIGHT - menu_height - HAND_MARGIN)
+
+    rects = []
+    actions = []
+    for i, (label, action) in enumerate(options):
+        rect = pygame.Rect(x + 6, y + 4 + i * item_height, menu_width - 12, item_height)
+        rects.append((rect, label))
+        actions.append(action)
+
+    context_menu = {
+        "visible": True,
+        "rect": pygame.Rect(x, y, menu_width, menu_height),
+        "rects": rects,
+        "actions": actions,
+        "card_id": card_entry.get("id"),
+        "kind": "hand",
     }
 
 def render_context_menu():
@@ -509,6 +1459,36 @@ def render_context_menu():
     for item_rect, label in context_menu.get("rects", []):
         text_surface = menu_font.render(label, True, (240, 240, 240))
         screen.blit(text_surface, (item_rect.x + 4, item_rect.y + 2))
+
+
+def show_creature_context_menu(creature_entry, pos):
+    global context_menu
+    card_dict = creature_entry.get("card", {})
+    menu_width = 160
+    item_height = 22
+    options = [("Attack", "attack")]
+    menu_height = item_height * len(options) + 8
+
+    x, y = pos
+    x = min(x, WIDTH - menu_width - HAND_MARGIN)
+    y = min(y, HEIGHT - menu_height - HAND_MARGIN)
+
+    rects = []
+    actions = []
+    for i, (label, action) in enumerate(options):
+        rect = pygame.Rect(x + 6, y + 4 + i * item_height, menu_width - 12, item_height)
+        rects.append((rect, label))
+        actions.append(action)
+
+    context_menu = {
+        "visible": True,
+        "rect": pygame.Rect(x, y, menu_width, menu_height),
+        "rects": rects,
+        "actions": actions,
+        "creature_id": creature_entry.get("id"),
+        "kind": "creature",
+        "name": card_dict.get("name"),
+    }
 
 def get_selected_anchor():
     if not selected_card_id:
@@ -604,8 +1584,8 @@ def render_popup():
 
     close_size = 18
     close_rect = pygame.Rect(
-        rect.right - close_size - pad,
-        rect.top + pad,
+        rect.right - close_size - pad + 5,
+        rect.top + pad - 5,
         close_size,
         close_size,
     )
@@ -644,6 +1624,7 @@ def move_selected_to_creatures(game_state, player):
         return False
     if not wiz.game.play_creature(player, selected_card_id):
         return False
+    add_notification(f"{player} has played {card.get('name', 'a creature')}")
     selected_card_id = None
     return True
 
@@ -661,32 +1642,73 @@ def move_selected_to_lands(game_state, player):
     if not HAS_PLAYED_LAND:
       wiz.play_land(selected_card_id, player=player)
       HAS_PLAYED_LAND = True
+      add_notification(f"{player} has played {card.get('name', 'a land')}")
     else:
-      announce("You can only play one land per turn")
+      popup("You can only play one land per turn")
       return False
     selected_card_id = None
     return True
 
 def handle_target_selection(selected_id, target_id):
-    print(f"Selected card {selected_id} → target {target_id}")
+    print(f"Selected card {selected_id} -> target {target_id}")
 
 # Handle left-click interactions
 def handle_left_click(game_state, player, pos):
-    global selected_card_id, context_menu, popup_state
+    global selected_card_id, active_selected_card_id, context_menu, popup_state, selected_blocker_id
 
     if context_menu.get("visible"):
         clicked_option = False
         for idx, (rect, _) in enumerate(context_menu.get("rects", [])):
             if rect.collidepoint(pos):
                 clicked_option = True
-                land_id = context_menu.get("land_id")
-                color = context_menu.get("actions", [None])[idx]
-                if land_id:
-                    wiz.tap_land(land_id, color, player=player)
+                menu_kind = context_menu.get("kind")
+                action = context_menu.get("actions", [None])[idx]
+                if menu_kind == "land":
+                    land_id = context_menu.get("land_id")
+                    if land_id:
+                        wiz.tap_land(land_id, action, player=player)
+                        land_entry = game_state[player]["lands"].get(str(land_id), {})
+                        land_card = land_entry.get("card", {})
+                        color_text = action if action else "mana"
+                        add_notification(f"{player} has tapped {land_card.get('name', 'a land')} for {color_text}")
+                elif menu_kind == "creature":
+                    creature_id = context_menu.get("creature_id")
+                    if creature_id and action == "attack":
+                        toggle_attacker(game_state, player, creature_id)
+                elif menu_kind == "hand":
+                    card_id = context_menu.get("card_id")
+                    if card_id and action == "discard":
+                        hand = game_state.get(player, {}).get("hand", {})
+                        if len(hand) <= 7:
+                            popup("You cannot discard with 7 or fewer cards")
+                        else:
+                            card = hand.get(card_id, {})
+                            if wiz.game.discard_cards(player, [card_id]):
+                                add_notification(f"{player} discarded {card.get('name', card_id)}")
                 break
         context_menu["visible"] = False
         if clicked_option:
             return
+
+    if combat_prompt_state.get("visible"):
+        confirm_rect = combat_prompt_state.get("confirm_rect")
+        cancel_rect = combat_prompt_state.get("cancel_rect")
+        if confirm_rect and confirm_rect.collidepoint(pos):
+            if combat_prompt_state.get("mode") == "attackers":
+                confirm_attackers(game_state)
+            elif combat_prompt_state.get("mode") == "blockers":
+                confirm_blockers(game_state)
+            combat_prompt_state["visible"] = False
+            return
+        if cancel_rect and cancel_rect.collidepoint(pos):
+            reset_combat_ui()
+            combat_prompt_state["visible"] = False
+            return
+        rect = combat_prompt_state.get("rect")
+        if rect and rect.collidepoint(pos):
+            return
+        combat_prompt_state["visible"] = False
+        return
 
     if popup_state.get("visible"):
         close_rect = popup_state.get("close_rect")
@@ -696,6 +1718,59 @@ def handle_left_click(game_state, player, pos):
             return
         if popup_rect and popup_rect.collidepoint(pos):
             return
+
+    action_mulligan = label_rects.get("mulligan")
+    action_end_turn = label_rects.get("end_turn")
+    combat_confirm = label_rects.get("combat_confirm")
+    if action_mulligan and action_mulligan.collidepoint(pos):
+        if player != wiz.current_player():
+            popup("Only the active player can mulligan")
+            return
+        if wiz.card_played_this_turn > 0:
+            popup("You cannot mulligan after playing a card")
+            return
+        if not wiz.mulligan():
+            popup("Mulligan only available on your first turn")
+        else:
+            add_notification(f"{player} mulligans")
+            draw_animation["active"] = False
+            draw_animation["queue"] = []
+            draw_animation["card_id"] = None
+            draw_animation["card"] = None
+            draw_animation["start"] = None
+            draw_animation["end"] = None
+            last_drawn_id[player] = None
+            refreshed = wiz.game.get_game_state()
+            prev_hand_ids[player] = set(refreshed.get(player, {}).get("hand", {}).keys())
+        return
+    if action_end_turn and action_end_turn.collidepoint(pos):
+        if player != wiz.current_player():
+            popup("Only the active player can end the turn")
+            return
+        if getattr(wiz, "combat_phase", None) == "attackers" and getattr(wiz, "pending_attackers", []):
+            popup("You must confirm or cancel attackers first")
+            return
+        if len(game_state.get(player, {}).get("hand", {})) > 7:
+            popup("You must discard down to 7 cards before ending your turn")
+            return
+        start_new_turn_ui()
+        return
+    if combat_confirm and combat_confirm.collidepoint(pos):
+        if getattr(wiz, "combat_phase", None) == "attackers":
+            lines = build_attackers_preview_lines(game_state, list(getattr(wiz, "pending_attackers", [])))
+            show_combat_prompt("attackers", lines)
+        elif getattr(wiz, "combat_phase", None) == "blockers":
+            lines = build_blockers_preview_lines(game_state, getattr(wiz, "pending_blocks", {}))
+            show_combat_prompt("blockers", lines)
+        return
+
+    if getattr(wiz, "combat_phase", None) == "blockers" and getattr(wiz, "priority_player", None) == player:
+        if selected_blocker_id:
+            for hit in reversed(active_creature_hitboxes):
+                if hit["rect"].collidepoint(pos) and hit.get("owner") != player:
+                    if assign_blocker(game_state, player, selected_blocker_id, hit["id"]):
+                        selected_blocker_id = None
+                    return
 
     # Click on label zones to move selected cards
     if selected_card_id:
@@ -715,7 +1790,32 @@ def handle_left_click(game_state, player, pos):
                 selected_card_id = None
             else:
                 selected_card_id = hit["id"]
+                active_selected_card_id = None
             return
+
+    if getattr(wiz, "combat_phase", None) == "attackers" and getattr(wiz, "priority_player", None) == player:
+        for hit in reversed(creature_hitboxes):
+            if hit["rect"].collidepoint(pos) and hit.get("owner") == player and hit.get("zone") == "creatures":
+                toggle_attacker(game_state, player, hit["id"])
+                return
+
+    if getattr(wiz, "combat_phase", None) == "blockers" and getattr(wiz, "priority_player", None) == player:
+        for hit in reversed(creature_hitboxes):
+            if hit["rect"].collidepoint(pos) and hit.get("owner") == player and hit.get("zone") == "creatures":
+                if selected_blocker_id == hit["id"]:
+                    selected_blocker_id = None
+                else:
+                    selected_blocker_id = hit["id"]
+                return
+
+    if not selected_card_id:
+        for hit in reversed(active_creature_hitboxes):
+            if hit["rect"].collidepoint(pos) and hit.get("owner") == player:
+                if active_selected_card_id == hit["id"]:
+                    active_selected_card_id = None
+                else:
+                    active_selected_card_id = hit["id"]
+                return
 
     # If a card is selected, allow targeting creatures/lands
     if selected_card_id:
@@ -729,9 +1829,29 @@ def handle_left_click(game_state, player, pos):
                 return
 
     selected_card_id = None
+    active_selected_card_id = None
+    selected_blocker_id = None
 
 def handle_right_click(game_state, player, pos):
     global context_menu
+    for hit in reversed(hand_hitboxes):
+        if hit["rect"].collidepoint(pos):
+            show_hand_context_menu({"id": hit["id"]}, pos)
+            return
+    for hit in reversed(active_creature_hitboxes):
+        if hit["rect"].collidepoint(pos) and hit.get("owner") == player:
+            entry = game_state[player]["creatures"].get(hit["id"])
+            if entry:
+                entry = {**entry, "id": hit["id"]}
+                show_creature_context_menu(entry, pos)
+            return
+    for hit in reversed(creature_hitboxes):
+        if hit["rect"].collidepoint(pos) and hit.get("owner") == player:
+            entry = game_state[player]["creatures"].get(hit["id"])
+            if entry:
+                entry = {**entry, "id": hit["id"]}
+                show_creature_context_menu(entry, pos)
+            return
     for hit in reversed(land_hitboxes):
         if hit["rect"].collidepoint(pos) and hit["owner"] == player:
             entry = game_state[player]["lands"].get(hit["id"])
@@ -746,13 +1866,55 @@ def handle_right_click(game_state, player, pos):
 
 # Float when hovering over a card
 def on_mouse_hover(game_state, player):
-    global hovered_card_id
+    global hovered_card_id, hover_state, hover_label_state
     mouse_pos = pygame.mouse.get_pos()
     hovered_card_id = None
+    hover_hit = None
+
     for hit in reversed(hand_hitboxes):
         if hit["rect"].collidepoint(mouse_pos):
-            hovered_card_id = hit["id"]
+            hover_hit = hit
             break
+    if not hover_hit:
+        for hit in reversed(active_creature_hitboxes):
+            if hit["rect"].collidepoint(mouse_pos):
+                hover_hit = hit
+                break
+    if not hover_hit:
+        for hit in reversed(creature_hitboxes):
+            if hit["rect"].collidepoint(mouse_pos):
+                hover_hit = hit
+                break
+    if not hover_hit:
+        for hit in reversed(land_hitboxes):
+            if hit["rect"].collidepoint(mouse_pos):
+                hover_hit = hit
+                break
+
+    if hover_hit:
+        hovered_card_id = hover_hit["id"]
+        now = pygame.time.get_ticks()
+        if hover_state.get("card_id") != hover_hit["id"]:
+            hover_state = {
+                "card_id": hover_hit["id"],
+                "start_ms": now,
+                "card": hover_hit.get("card"),
+                "rect": hover_hit.get("rect"),
+            }
+            hover_label_state["visible"] = False
+        else:
+            hover_state["rect"] = hover_hit.get("rect")
+            hover_state["card"] = hover_hit.get("card")
+            if not hover_label_state.get("visible") and now - hover_state.get("start_ms", 0) >= 1500:
+                card_dict = hover_state.get("card") or {}
+                hover_label_state["lines"] = build_hover_label_lines(card_dict)
+                hover_label_state["anchor_rect"] = hover_state.get("rect")
+                hover_label_state["visible"] = True
+            elif hover_label_state.get("visible"):
+                hover_label_state["anchor_rect"] = hover_state.get("rect")
+    else:
+        hover_state = {"card_id": None, "start_ms": 0, "card": None, "rect": None}
+        hover_label_state["visible"] = False
     return hovered_card_id
 
 # Move the card upwards when clicked to signify it's selected
@@ -763,10 +1925,14 @@ def on_mouse_click(game_state, player):
 
 wiz = Wizard("Player 1", "Player 2")
 wiz.start()
+view_player = wiz.current_player()
 
 running = True
 while running:
     state = wiz.game.get_game_state()
+    view_player = wiz.priority_player or wiz.current_player()
+    detect_creature_stat_changes(state)
+    detect_draw_animation(state, view_player)
     update_image_paths(state)
 
     for event in pygame.event.get():
@@ -776,20 +1942,30 @@ while running:
             WIDTH, HEIGHT = event.w, event.h
             screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            handle_left_click(state, wiz.current_player(), event.pos)
+            handle_left_click(state, view_player, event.pos)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-            handle_right_click(state, wiz.current_player(), event.pos)
+            handle_right_click(state, view_player, event.pos)
 
     screen.fill(BACKGROUND_COLOR)
-    on_mouse_hover(state, wiz.current_player())
-    render_battlefield(state, wiz.current_player())
-    render_hand(state, wiz.current_player())
+    on_mouse_hover(state, view_player)
+    render_battlefield(state, view_player)
+    _, _, _, _, hand_start_x = get_deck_layout()
+    exclude_ids = []
+    if draw_animation.get("active") and draw_animation.get("player") == view_player:
+        exclude_ids = [draw_animation.get("card_id")]
+    render_hand(state, view_player, start_x=hand_start_x, exclude_ids=exclude_ids)
+    render_draw_animation()
+    render_combat_lines(state)
     render_zone_labels()
+    render_notifications()
     render_popup()
     render_context_menu()
+    render_hover_label()
+    render_combat_prompt()
+    render_announce()
     if not popup_shown:
-        popup("Welcome to Wizard!\n1. Click on a creature card to select it and click on the labels to move them around.\n2. Click on a land card to select it and click on the labels to move it around."
-        "\n3. Click on a spell card to select it and click on the desired target.\n4. Click off to deselect a card.")
+        popup("Welcome to Wizard!\n1. Click on a card to select it and click on the labels to move it around.\n2. You can only play one land per turn."
+        "\n3. Right click on a land to tap it.\n4. Right click on a creature to attack.\n5. Click on spells to target creatures or players.")
         popup_shown = True
     if selected_card_id:
         anchor = get_selected_anchor()

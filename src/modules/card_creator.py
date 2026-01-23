@@ -208,6 +208,40 @@ def create_card(card_data, output_path="card_output.png"):
     print(f"Card created: {output_path}")
     return card
 
+
+def update_card_stats(card_data, output_path, base_path):
+    """
+    Update only the stats area of an existing card image.
+    Keeps the existing card frame color intact.
+    """
+    if not base_path or not os.path.exists(base_path):
+        return create_card(card_data, output_path)
+
+    card = Image.open(base_path).convert("RGBA")
+    stats_font = load_font(24)
+
+    stats_x = CARD_WIDTH - 70
+    stats_y = CARD_HEIGHT - 40
+    box_left = stats_x - 6
+    box_top = stats_y - 6
+    box_right = CARD_WIDTH - 8
+    box_bottom = CARD_HEIGHT - 8
+
+    sample_x = min(CARD_WIDTH - 12, max(0, CARD_WIDTH - 12))
+    sample_y = min(CARD_HEIGHT - 12, max(0, CARD_HEIGHT - 12))
+    bg_color = card.getpixel((sample_x, sample_y))
+
+    draw = ImageDraw.Draw(card)
+    draw.rectangle([box_left, box_top, box_right, box_bottom], fill=bg_color)
+
+    if hasattr(card_data, 'attack') and hasattr(card_data, 'defence'):
+        stats_text = f"{card_data.attack}/{card_data.defence}"
+        draw_crisp_text(card, (stats_x, stats_y), stats_text, stats_font, (0, 0, 0, 255))
+
+    card.save(output_path)
+    print(f"Card stats updated: {output_path}")
+    return card
+
 def wrap_text(text, font, max_width):
     """
     Wrap text to fit within max_width.
