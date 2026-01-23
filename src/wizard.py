@@ -194,6 +194,14 @@ class Wizard:
     def mulligan(self):
         state = self.game.get_game_state()
         player = state["current_player"]
+        turn_number = state.get("turn_number", 1)
+
+        if not (
+            (player == self.p1 and turn_number == 1) or
+            (player == self.p2 and turn_number == 2)
+        ):
+            print("Mulligan only available on your first turn.")
+            return False
 
         hand = state[player]["hand"]
         deck = state[player]["deck"]

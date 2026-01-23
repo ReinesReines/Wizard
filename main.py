@@ -380,6 +380,7 @@ def render_hand(game_state, player, start_x=None, exclude_ids=None):
             continue
         rect = render_image(card_dict, card_x, base_y - max(20, card_height // 6))
         hand_hitboxes.append({"id": card_id, "rect": rect, "card": card_dict, "zone": "hand"})
+        draw_pulse_outline(rect, (255, 255, 255), (220, 220, 220))
 
 
 def render_creature_row(game_state, player, y, align="left", filter_fn=None, attack_ids=None, rotate_attackers=False, animate=False):
@@ -847,8 +848,38 @@ def format_defence_after(card_dict, defence_value):
     return str(defence_value)
 
 
+def tap_all_lands(game_state, player):
+    if player != wiz.current_player():
+        popup("Only the active player can tap lands")
+        return False
+    lands = game_state.get(player, {}).get("lands", {})
+    if not lands:
+        popup("No lands to tap")
+        return False
+    tapped_any = False
+    for land_id, land_entry in lands.items():
+        land_card = land_entry.get("card", {})
+        tapped = land_entry.get("tapped", land_card.get("tapped", False))
+        if tapped:
+            continue
+        colors = get_land_colors(land_card.get("effect", ""))
+        choice = colors[0] if colors else None
+        if wiz.tap_land(land_id, choice, player=player):
+            tapped_any = True
+            color_text = choice if choice else "mana"
+            add_notification(f"{player} tapped {land_card.get('name', 'a land')} for {color_text}")
+    if not tapped_any:
+        popup("All lands are already tapped")
+        return False
+    return True
+
+
 def can_show_mulligan(game_state, player):
     current_player = game_state.get("current_player")
+    turn_number = game_state.get("turn_number", 1)
+    allowed_turn = (player == wiz.p1 and turn_number == 1) or (player == wiz.p2 and turn_number == 2)
+    if not allowed_turn:
+        return False
     if player != current_player:
         return False
     if wiz.card_played_this_turn > 0:
@@ -1594,7 +1625,10 @@ def render_battlefield(game_state, player):
         mana_x += width + mana_gap
 
     queue_zone_label("Hand", HAND_MARGIN, hand_label_y, align="left", key="hand")
-    queue_zone_label("Lands", WIDTH // 2, lands_label_y, align="center", key="lands")
+    lands_x = WIDTH // 2
+    queue_zone_label("Lands", lands_x, lands_label_y, align="center", key="lands")
+    tap_all_x = lands_x + label_font.size("Lands")[0] // 2 + 14
+    queue_zone_label("Tap All", tap_all_x, lands_label_y, align="left", key="tap_all_lands")
     queue_zone_label("Graveyard", WIDTH - HAND_MARGIN, graveyard_label_y, align="right", key="graveyard")
 
     action_label_y = bottom_row_y - card_height - label_height - label_gap - 10
@@ -2105,6 +2139,10 @@ def handle_left_click(game_state, player, pos):
         if lands_label and lands_label.collidepoint(pos):
             if move_selected_to_lands(game_state, player):
                 return
+    tap_all_label = label_rects.get("tap_all_lands")
+    if tap_all_label and tap_all_label.collidepoint(pos):
+        if tap_all_lands(game_state, player):
+            return
 
     # Click on hand card to select/deselect
     for hit in reversed(hand_hitboxes):

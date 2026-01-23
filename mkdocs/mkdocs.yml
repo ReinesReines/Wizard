@@ -1,0 +1,160 @@
+# Project information
+site_name: Card Game Design
+site_url: https://example.com
+site_author: anonymous
+
+# # Repository
+# repo_name: scratch-docs
+# repo_url: https://github.com/ragh02/scratch-docs
+
+copyright: Copyright &copy; 2026 Max Chen. All rights reserved.
+
+# Theme
+theme:
+  name: material
+  # custom_dir: overrides
+  font:
+    text: Inter
+    code: JetBrains Mono
+  # favicon: assets/icon.png
+  # logo: assets/e2_parabola.png
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.top
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.expand
+    - navigation.footer
+    - navigation.path
+    - search.suggest
+    - search.share
+  palette:
+    
+
+
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+        primary: red
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default 
+      primary: black
+      # accent: teal
+      
+
+
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+        primary: black
+        accent: teal
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      # accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+        primary: black
+        accent: teal
+
+
+
+
+# Plugins
+plugins:
+  # - blog:
+  #     blog_toc: true
+  #     archive_date_format: MMMM yyyy
+  #     authors_profiles: true
+  #     authors_file: "blog/authors.yml"
+  #     archive_name: Posts
+  #     pagination_per_page: 10
+  #     archive_pagination_per_page: 20
+  #     categories_pagination_per_page: 20
+  #     categories: true
+
+  # - search
+  #  mkdocs_quiz
+  # - glightbox
+  # - tags
+  # - encryptcontent:
+  #     remember_keys: False
+  #     password_inventory:
+  #       secured:
+  #         tomas: jones
+  #     title_prefix: '[Locked] '
+  #     summary: 'Log in to Evil Exams'
+  #     placeholder: 'Password'
+  #     decryption_failure_message: 'Sorry, you do not have the required access privileges to access this page. Please contact the website administrator if you believe this is in error'
+  #     encryption_info_message: "This is a secured page. Please log in to access this page."
+  
+
+# Extensions
+markdown_extensions:
+  - tables
+  - md_in_html
+  - pymdownx.blocks.caption
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - meta
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.blocks.caption
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      check_paths: true
+
+
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+  - pymdownx.highlight:
+      linenums: true
+      use_pygments: true
+      pygments_lang_class: true
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+
+
+extra_javascript:
+  - https://unpkg.com/tablesort@5.3.0/dist/tablesort.min.js
+  - javascripts/tablesort.js
+  - javascripts/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
+extra_css:
+  - https://unpkg.com/katex@0/dist/katex.min.css
