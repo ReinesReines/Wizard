@@ -323,6 +323,7 @@ class GameEngine:
 
         opponent = self.player2 if player == self.player1 else self.player1
         needs_death_check = False
+        pending_draws = []
         
         def add_status(card, status):
             existing = card.get("status", "")
@@ -467,8 +468,9 @@ class GameEngine:
                     blocks = game_state.get("combat", {}).get("blocks", {})
                     if condition == "attackonly":
                         for cid in attackers:
-                            if cid in game_state[player]["creatures"]:
-                                add_status(game_state[player]["creatures"][cid]["card"], status)
+                            for owner in [self.player1, self.player2]:
+                                if cid in game_state[owner]["creatures"]:
+                                    add_status(game_state[owner]["creatures"][cid]["card"], status)
                     else:
                         for a_id, b_list in blocks.items():
                             for b_id in b_list:
@@ -480,8 +482,8 @@ class GameEngine:
                         for owner, cid, cdata in iter_active_creatures([self.player1, self.player2]):
                             add_status(cdata["card"], status)
                     elif effect.get("global"):
-                        for owner, cid, card in iter_hand_creatures(player):
-                            add_status(card, status)
+                        for owner, cid, cdata in iter_active_creatures([player]):
+                            add_status(cdata["card"], status)
                     elif effect.get("creatureid") or target_type == "creature" or target_kind == "creature":
                         owner, creature_data = self._resolve_spell_target_creature(game_state, target)
                         if not creature_data:
@@ -550,7 +552,8 @@ class GameEngine:
                     self._error(f"Invulnerable failed: creature '{target}' not found.")
                     return False
                 creature_data["invuln"] = True
-                creature_data["card"]["defence"] = 99999
+                add_status(creature_data["card"], "invuln")
+                creature_data["card"]["defence"] = 9999
                 self._info(f"{creature_data['card']['name']} becomes invulnerable.")
 
             elif action == "nomanareset":
@@ -559,9 +562,9 @@ class GameEngine:
 
             elif action == "draw":
                 target_player = self._resolve_spell_target_player(player, target) if target_type == "player" else player
-                for _ in range(value):
-                    self.draw_card(target_player)
-                self._info(f"{target_player} draws {value} card(s).")
+                if target_player is None:
+                    target_player = player
+                pending_draws.append((target_player, value))
 
             elif action == "heal":
                 if target_type == "creature" or target_kind == "creature" or effect.get("creatureid"):
@@ -581,15 +584,38 @@ class GameEngine:
                     self._info(f"{target_player} heals {value}.")
 
             elif action == "discard":
-                target_player = self._resolve_spell_target_player(player, target) if target_type == "player" else opponent
+                if target_type == "player":
+                    target_player = self._resolve_spell_target_player(player, target)
+                else:
+                    target_player = player
+                if target_player is None:
+                    target_player = opponent
+                if target_player is None:
+                    self._error("Discard failed: target player not found.")
+                    return False
                 hand = game_state[target_player]["hand"]
-                discard_ids = list(hand.keys())[:value]
-                for cid in discard_ids:
-                    game_state[target_player]["graveyard"].append(hand[cid])
-                    del hand[cid]
-                self._info(f"{target_player} discards {len(discard_ids)} card(s).")
+                if len(hand) < value:
+                    discard_ids = list(hand.keys())
+                    for cid in discard_ids:
+                        game_state[target_player]["graveyard"].append(hand[cid])
+                        del hand[cid]
+                    self._info(f"{target_player} discards {len(discard_ids)} card(s).")
+                else:
+                    game_state["pending_discard"] = {
+                        "player": target_player,
+                        "count": value,
+                        "requester": player,
+                    }
+                    self._info(f"{target_player} must discard {value} card(s).")
 
         self._save_state(game_state)
+        if pending_draws:
+            for target_player, value in pending_draws:
+                drawn = 0
+                for _ in range(value):
+                    if self.draw_card(target_player):
+                        drawn += 1
+                self._info(f"{target_player} draws {drawn} card(s).")
         if needs_death_check:
             self.check_creature_deaths()
         return True
@@ -1098,6 +1124,9 @@ class GameEngine:
                 # Clear invulnerability each turn
                 if creature_data.get("invuln"):
                     creature_data["invuln"] = False
+                    existing = str(card.get("status", "") or "")
+                    statuses = [s.strip() for s in existing.split(",") if s.strip() and s.strip() != "invuln"]
+                    card["status"] = ", ".join(statuses)
         
         self._save_state(game_state)
 
@@ -1759,7 +1788,8 @@ class GameEngine:
 
                 elif effect["action"] == "invuln":
                     creature_data["invuln"] = True
-                    creature_card["defence"] = 99999
+                    add_status(creature_card, "invuln")
+                    creature_card["defence"] = 9999
                     self._info(f"{creature_card['name']} becomes invulnerable.")
 
                 elif effect["action"] == "draw":

@@ -4,11 +4,12 @@ import pygame
 from PIL import Image
 
 from src.modules.card_creator import create_card, update_card_stats
+from src.modules.parser import EffectParser
 from src.modules.utils import get_land_colors
 from src.wizard import Wizard
 
 WIDTH, HEIGHT = 800, 600
-BACKGROUND_COLOR = (75, 82, 99)
+BACKGROUND_COLOR = (106, 92, 125)
 CARD_SPACING = 10
 HAND_MARGIN = 8
 CARD_SCALE = 0.5
@@ -51,8 +52,16 @@ selected_blocker_id = None
 notifications = []
 attacker_select_id = None
 prev_creature_stats = {}
+prev_creature_status = {}
 prev_hand_ids = {}
 last_drawn_id = {}
+discard_state = {
+    "active": False,
+    "player": None,
+    "required": 0,
+    "discarded": 0,
+    "return_player": None,
+}
 draw_animation = {
     "active": False,
     "card_id": None,
@@ -92,6 +101,7 @@ popup_state = {
     "font_size": 16,
 }
 popup_shown = False
+game_over_state = {"active": False, "winner": None, "loser": None}
 
 try:
     card_font = pygame.font.Font(SILK_PATH, 18)
@@ -570,24 +580,25 @@ def render_enemy_hand(game_state, player, y, align="center"):
 
 
 def render_graveyard_row(game_state, player, y, align="right"):
-    graveyard = list(game_state[player].get("graveyard", []))
+    graveyard = list(game_state[player].get("graveyard", []))[-7:]
     if not graveyard:
         return
 
     placeholder = load_pil_image(PLACEHOLDER_PATH)
     card_width = max(1, int(placeholder.width * CARD_SCALE))
-    total_width = (card_width * len(graveyard)) + CARD_SPACING * (len(graveyard) - 1)
+    card_height = max(1, int(placeholder.height * CARD_SCALE))
+    step = max(18, int(card_width * 0.4))
 
     if align == "right":
-        x = max(HAND_MARGIN, WIDTH - HAND_MARGIN - total_width)
+        x = WIDTH - HAND_MARGIN - card_width
     elif align == "center":
-        x = max(HAND_MARGIN, (WIDTH - total_width) // 2)
+        x = max(HAND_MARGIN, (WIDTH - card_width) // 2)
     else:
         x = HAND_MARGIN
 
-    for card_dict in graveyard:
+    for card_dict in reversed(graveyard):
         rect = render_image(card_dict, x, y)
-        x += rect.width + CARD_SPACING
+        x -= step
 
 
 def draw_label(text, x, y, align="left", key=None, draw_bg=True):
@@ -725,7 +736,7 @@ def add_notification(message):
     if not message:
         return
     notifications.insert(0, message)
-    del notifications[3:]
+    del notifications[5:]
 
 
 def render_notifications():
@@ -738,9 +749,155 @@ def render_notifications():
         y += label_font.get_linesize() + 12
 
 
+def parse_spell_effects(card_dict):
+    try:
+        parser = EffectParser()
+        return parser.parse(card_dict.get("effect", ""))
+    except Exception:
+        return []
+
+
+def get_spell_targeting(card_dict):
+    effects = parse_spell_effects(card_dict)
+    needs_creature = False
+    needs_player = False
+    actions = set()
+    for effect in effects:
+        actions.add(effect.get("action"))
+        target_type = effect.get("target_type")
+        if effect.get("creatureid"):
+            needs_creature = True
+        if target_type:
+            if isinstance(target_type, list):
+                if "creature" in target_type:
+                    needs_creature = True
+                if "player" in target_type:
+                    needs_player = True
+            elif target_type == "creature":
+                needs_creature = True
+            elif target_type == "player":
+                needs_player = True
+    scope = "any"
+    if "heal" in actions:
+        scope = "friendly"
+    elif "damage" in actions:
+        scope = "enemy_active"
+    return {
+        "needs_creature": needs_creature,
+        "needs_player": needs_player,
+        "scope": scope,
+    }
+
+
+def get_discard_value(card_dict):
+    effects = parse_spell_effects(card_dict)
+    for effect in effects:
+        if effect.get("action") == "discard":
+            return int(effect.get("value", 1) or 1)
+    return None
+
+
+def get_status_list(card_dict):
+    status_text = str(card_dict.get("status", "") or "")
+    statuses = [s.strip() for s in status_text.split(",") if s.strip()]
+    effect_text = str(card_dict.get("effect", "") or "")
+    if effect_text:
+        parser = EffectParser()
+        for effect in parser.parse(effect_text):
+            if effect.get("action") == "static":
+                status = effect.get("status")
+                if status:
+                    statuses.append(status)
+    seen = set()
+    deduped = []
+    for status in statuses:
+        if status not in seen:
+            seen.add(status)
+            deduped.append(status)
+    return deduped
+
+
+def has_invuln_status(card_dict):
+    statuses = [s.lower() for s in get_status_list(card_dict)]
+    return "invuln" in statuses
+
+
+def format_stat_value(value, is_invuln=False):
+    if is_invuln:
+        return "inf"
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def format_card_stats(card_dict):
+    attack = card_dict.get("attack")
+    defence = card_dict.get("defence")
+    return (
+        format_stat_value(attack),
+        format_stat_value(defence, is_invuln=has_invuln_status(card_dict)),
+    )
+
+
+def format_defence_after(card_dict, defence_value):
+    if has_invuln_status(card_dict):
+        return "inf"
+    if defence_value is None:
+        return "-"
+    return str(defence_value)
+
+
+def can_show_mulligan(game_state, player):
+    current_player = game_state.get("current_player")
+    if player != current_player:
+        return False
+    if wiz.card_played_this_turn > 0:
+        return False
+    return True
+
+
+def activate_pending_discard(state):
+    pending_discard = state.get("pending_discard")
+    if not pending_discard or discard_state.get("active"):
+        return
+    discard_state["active"] = True
+    discard_state["player"] = pending_discard.get("player")
+    discard_state["required"] = pending_discard.get("count", 0)
+    discard_state["discarded"] = 0
+    discard_state["return_player"] = pending_discard.get("requester")
+    wiz.priority_player = pending_discard.get("player")
+    target_player = pending_discard.get("player")
+    required = pending_discard.get("count", 0)
+    announce(f"{target_player} must discard {required} card(s)")
+    add_notification(f"{target_player} must discard {required} card(s)")
+
+
+def check_game_over(state):
+    if game_over_state.get("active"):
+        return True
+    p1_health = state.get(wiz.p1, {}).get("health", 0)
+    p2_health = state.get(wiz.p2, {}).get("health", 0)
+    if p1_health > 0 and p2_health > 0:
+        return False
+    loser = wiz.p1 if p1_health <= 0 else wiz.p2
+    winner = wiz.p2 if loser == wiz.p1 else wiz.p1
+    game_over_state.update({"active": True, "winner": winner, "loser": loser})
+    add_notification(f"GAME OVER - {winner} wins")
+    announce(f"GAME OVER - {winner} wins", duration_ms=9999999)
+    return True
+
+
+def clear_pending_discard():
+    state = wiz.game.get_game_state()
+    if "pending_discard" in state:
+        del state["pending_discard"]
+        wiz.game._save_state(state)
+
+
 def detect_creature_stat_changes(game_state):
-    global prev_creature_stats
+    global prev_creature_stats, prev_creature_status
     current = {}
+    current_status = {}
     changed = False
     for player in (wiz.p1, wiz.p2):
         creatures = game_state.get(player, {}).get("creatures", {})
@@ -749,6 +906,7 @@ def detect_creature_stat_changes(game_state):
             attack = card.get("attack")
             defence = card.get("defence")
             current[(player, str(cid))] = (attack, defence)
+            current_status[(player, str(cid))] = ", ".join(get_status_list(card))
 
     for key, stats in current.items():
         prev = prev_creature_stats.get(key)
@@ -777,8 +935,19 @@ def detect_creature_stat_changes(game_state):
                 if base_path and os.path.exists(base_path):
                     update_card_stats(wiz.game._reconstruct_card(card_dict), base_path, base_path)
                     changed = True
+        prev_status = prev_creature_status.get(key)
+        new_status = current_status.get(key)
+        if prev_status is not None and new_status is not None and prev_status != new_status:
+            player, cid = key
+            name = game_state[player]["creatures"].get(cid, {}).get("card", {}).get("name", cid)
+            status_label = new_status if new_status else "no status"
+            add_notification(f"{name} status: {status_label}")
+            if hover_label_state.get("visible") and str(hovered_card_id) == str(cid):
+                card_dict = game_state[player]["creatures"][cid]["card"]
+                hover_label_state["lines"] = build_hover_label_lines(card_dict)
 
     prev_creature_stats = current
+    prev_creature_status = current_status
     if changed:
         wiz.game._save_state(game_state)
 
@@ -791,20 +960,38 @@ def build_combat_summary_lines(pre_state, damage_queue):
     blocks = pre_state.get("combat", {}).get("blocks", {})
 
     damage_to = {}
+    player_damage = {}
+    direct_damage_by_attacker = {}
     for entry in damage_queue:
-        if entry.get("target") != "creature":
-            continue
-        key = (entry.get("target_player"), str(entry.get("target_id")))
-        damage_to[key] = damage_to.get(key, 0) + entry.get("damage", 0)
+        if entry.get("target") == "creature":
+            key = (entry.get("target_player"), str(entry.get("target_id")))
+            damage_to[key] = damage_to.get(key, 0) + entry.get("damage", 0)
+        elif entry.get("target") == "player":
+            target_player = entry.get("target_player")
+            player_damage[target_player] = player_damage.get(target_player, 0) + entry.get("damage", 0)
+            source_id = entry.get("source_id")
+            if source_id is not None:
+                direct_damage_by_attacker[str(source_id)] = direct_damage_by_attacker.get(str(source_id), 0) + entry.get("damage", 0)
 
     for attacker_id in attackers:
         blocker_ids = blocks.get(attacker_id, [])
         if not blocker_ids:
+            attacker_entry = pre_state.get(attacker_player, {}).get("creatures", {}).get(str(attacker_id), {})
+            attacker_card = attacker_entry.get("card", {})
+            attacker_name = attacker_card.get("name", str(attacker_id))
+            attacker_att, attacker_end = format_card_stats(attacker_card)
+            direct_damage = direct_damage_by_attacker.get(str(attacker_id), 0)
+            if direct_damage:
+                lines.append(
+                    f"{attacker_name} ({attacker_att}/{attacker_end}) -> "
+                    f"{defender_player} takes {direct_damage}"
+                )
             continue
         attacker_entry = pre_state.get(attacker_player, {}).get("creatures", {}).get(str(attacker_id), {})
         attacker_card = attacker_entry.get("card", {})
         attacker_name = attacker_card.get("name", str(attacker_id))
-        attacker_stats = (attacker_card.get("attack", "-"), attacker_card.get("defence", "-"))
+        attacker_att, attacker_end = format_card_stats(attacker_card)
+        attacker_stats = (attacker_att, attacker_end)
         attacker_damage = damage_to.get((attacker_player, str(attacker_id)), 0)
         attacker_dead = (
             attacker_card.get("defence") is not None
@@ -815,12 +1002,26 @@ def build_combat_summary_lines(pre_state, damage_queue):
             blocker_entry = pre_state.get(defender_player, {}).get("creatures", {}).get(str(blocker_id), {})
             blocker_card = blocker_entry.get("card", {})
             blocker_name = blocker_card.get("name", str(blocker_id))
-            blocker_stats = (blocker_card.get("attack", "-"), blocker_card.get("defence", "-"))
+            blocker_att, blocker_end = format_card_stats(blocker_card)
+            blocker_stats = (blocker_att, blocker_end)
             blocker_damage = damage_to.get((defender_player, str(blocker_id)), 0)
             blocker_dead = (
                 blocker_card.get("defence") is not None
                 and blocker_card.get("defence") - blocker_damage <= 0
             )
+
+            attacker_def_after = (
+                attacker_card.get("defence") - attacker_damage
+                if attacker_card.get("defence") is not None
+                else attacker_card.get("defence")
+            )
+            blocker_def_after = (
+                blocker_card.get("defence") - blocker_damage
+                if blocker_card.get("defence") is not None
+                else blocker_card.get("defence")
+            )
+            attacker_def_display = format_defence_after(attacker_card, attacker_def_after)
+            blocker_def_display = format_defence_after(blocker_card, blocker_def_after)
 
             if attacker_dead and blocker_dead:
                 outcome = "both die"
@@ -832,12 +1033,19 @@ def build_combat_summary_lines(pre_state, damage_queue):
                 outcome = "no deaths"
 
             lines.append(
-                f"{attacker_name} ({attacker_stats[0]}/{attacker_stats[1]}) -> "
-                f"{blocker_name} ({blocker_stats[0]}/{blocker_stats[1]}) ({outcome})"
+                f"{attacker_name} ({attacker_stats[0]}/{attacker_stats[1]}) vs "
+                f"{blocker_name} ({blocker_stats[0]}/{blocker_stats[1]}) | "
+                f"took {attacker_damage}/{blocker_damage} | "
+                f"end {attacker_def_display}/{blocker_def_display} ({outcome})"
             )
 
+    for player_name, damage in player_damage.items():
+        start_health = pre_state.get(player_name, {}).get("health", 0)
+        end_health = max(0, start_health - damage)
+        lines.append(f"{player_name} loses {damage} health ({start_health} -> {end_health})")
+
     if not lines:
-        lines.append("No creature combat this turn.")
+        lines.append("No combat damage this turn.")
 
     return lines
 
@@ -868,10 +1076,14 @@ def build_hover_label_lines(card_dict):
     sp_display = sp_mana if sp_mana else "none"
     lines.append(f"cost: {generic} + {sp_display}")
 
+    att, end = format_card_stats(card_dict)
     if "attack" in card_dict and card_dict.get("attack") is not None:
-        lines.append(f"att: {card_dict.get('attack')}")
+        lines.append(f"att: {att}")
     if "defence" in card_dict and card_dict.get("defence") is not None:
-        lines.append(f"end: {card_dict.get('defence')}")
+        lines.append(f"end: {end}")
+    statuses = get_status_list(card_dict)
+    if statuses:
+        lines.append(f"status: {', '.join(statuses)}")
 
     return lines
 
@@ -960,8 +1172,10 @@ def build_attackers_preview_lines(game_state, attacker_ids):
         for cid in attacker_ids:
             card = creatures.get(str(cid), {}).get("card", {})
             name = card.get("name", str(cid))
-            stats = f"{card.get('attack', '-')}/{card.get('defence', '-')}"
-            lines.append(f"- {name} ({stats})")
+            att, end = format_card_stats(card)
+            statuses = get_status_list(card)
+            status_text = f" [{', '.join(statuses)}]" if statuses else ""
+            lines.append(f"- {name} ({att}/{end}){status_text}")
     return lines
 
 
@@ -977,10 +1191,15 @@ def build_blockers_preview_lines(game_state, block_assignments):
         for attacker_id, blocker_ids in block_assignments.items():
             atk_card = attacker_creatures.get(str(attacker_id), {}).get("card", {})
             atk_name = atk_card.get("name", str(attacker_id))
+            atk_att, atk_end = format_card_stats(atk_card)
             for blocker_id in blocker_ids:
                 blk_card = defender_creatures.get(str(blocker_id), {}).get("card", {})
                 blk_name = blk_card.get("name", str(blocker_id))
-                lines.append(f"- {blk_name} -> {atk_name}")
+                blk_att, blk_end = format_card_stats(blk_card)
+                lines.append(
+                    f"- {blk_name} ({blk_att}/{blk_end}) -> {atk_name} ({atk_att}/{atk_end})"
+                )
+    return lines
 
 
 def show_combat_prompt(mode, lines):
@@ -1090,6 +1309,18 @@ def render_combat_lines(game_state):
             pygame.draw.rect(screen, (255, 215, 0), rect.inflate(6, 6), 2)
 
 
+def clear_blockers_ui():
+    global selected_blocker_id, attacker_select_id
+    selected_blocker_id = None
+    attacker_select_id = None
+    if getattr(wiz, "combat_phase", None) == "blockers":
+        defender = get_combat_defender() or wiz.current_player()
+        wiz.pending_blocks = {}
+        wiz.queue_blockers(defender, {})
+        add_notification("Blockers cleared")
+        announce("Blockers cleared")
+
+
 def reset_combat_ui():
     global selected_blocker_id, attacker_select_id
     selected_blocker_id = None
@@ -1146,17 +1377,20 @@ def toggle_attacker(game_state, player, creature_id):
     pending = list(getattr(wiz, "pending_attackers", []))
     if creature_id in pending:
         pending.remove(creature_id)
-        add_notification("Attacker removed")
+        creature = game_state[player]["creatures"].get(creature_id, {}).get("card", {})
+        att, end = format_card_stats(creature)
+        add_notification(f"Attacker removed: {creature.get('name', creature_id)} ({att}/{end})")
         if attacker_select_id == creature_id:
             attacker_select_id = None
     else:
         pending.append(creature_id)
         creature = game_state[player]["creatures"].get(creature_id, {}).get("card", {})
-        add_notification(f"Attacker queued: {creature.get('name', creature_id)}")
+        att, end = format_card_stats(creature)
+        add_notification(f"Attacker queued: {creature.get('name', creature_id)} ({att}/{end})")
         attacker_select_id = creature_id
     wiz.queue_attackers(player, pending)
     if pending:
-        add_notification("Attackers queued")
+        add_notification(f"Attackers selected: {len(pending)}")
     else:
         attacker_select_id = None
     return True
@@ -1190,14 +1424,21 @@ def assign_blocker(game_state, defender, blocker_id, attacker_id):
         new_blocks[attacker_id] = [b for b in new_blocks[attacker_id] if b != blocker_id]
         if not new_blocks[attacker_id]:
             new_blocks.pop(attacker_id, None)
-        add_notification("Blocker removed")
+        blk_card = defender_creatures.get(blocker_id, {}).get("card", {})
+        blk_att, blk_end = format_card_stats(blk_card)
+        add_notification(f"Blocker removed: {blk_card.get('name', blocker_id)} ({blk_att}/{blk_end})")
     else:
         lst = new_blocks.get(attacker_id, [])
         lst.append(blocker_id)
         new_blocks[attacker_id] = lst
         blk_card = defender_creatures.get(blocker_id, {}).get("card", {})
         atk_card = game_state.get(get_combat_attacker() or "", {}).get("creatures", {}).get(attacker_id, {}).get("card", {})
-        add_notification(f"Blocker queued: {blk_card.get('name', blocker_id)} -> {atk_card.get('name', attacker_id)}")
+        blk_att, blk_end = format_card_stats(blk_card)
+        atk_att, atk_end = format_card_stats(atk_card)
+        add_notification(
+            f"Blocker queued: {blk_card.get('name', blocker_id)} ({blk_att}/{blk_end}) -> "
+            f"{atk_card.get('name', attacker_id)} ({atk_att}/{atk_end})"
+        )
 
     wiz.queue_blockers(defender, new_blocks)
     return True
@@ -1214,8 +1455,8 @@ def confirm_attackers(game_state):
     wiz.game.declare_attackers(attacker, pending)
     wiz.pending_attackers = []
     wiz.pass_priority_to_blocker()
-    add_notification("Attackers confirmed")
-    popup("Priority passed, assign blockers")
+    add_notification(f"{attacker} confirms {len(pending)} attacker(s)")
+    # announce(f"{get_combat_defender()} assign blockers")
     attacker_select_id = None
     return True
 
@@ -1226,6 +1467,8 @@ def confirm_blockers(game_state):
     if getattr(wiz, "combat_phase", None) != "blockers":
         return False
     wiz.game.declare_blockers(defender, pending)
+    total_blocks = sum(len(v) for v in pending.values())
+    add_notification(f"{defender} confirms {total_blocks} blocker(s)")
     wiz.pending_blocks = {}
     attacker = get_combat_attacker()
     pre_state = wiz.game.get_game_state()
@@ -1247,7 +1490,6 @@ def confirm_blockers(game_state):
     loser = wiz.p1 if state.get(wiz.p1, {}).get("health", 0) <= 0 else wiz.p2 if state.get(wiz.p2, {}).get("health", 0) <= 0 else ""
     opposing = wiz.p2 if defender == wiz.p1 else wiz.p1
     wiz.priority_player = attacker or opposing
-    add_notification("Blockers confirmed")
     add_notification("Combat resolved")
     popup("\n".join(summary_lines))
     if won:
@@ -1360,6 +1602,8 @@ def render_battlefield(game_state, player):
     if combat_buttons:
         for text, x, y, key in combat_buttons:
             queue_zone_label(text, x, y, align="right", key=key)
+    if discard_state.get("active") and discard_state.get("player") == player:
+        queue_zone_label("Confirm", WIDTH - HAND_MARGIN - 220, action_label_y + label_height + 8, align="right", key="discard_confirm")
 
     priority_name = wiz.priority_player or wiz.current_player()
     priority_health = game_state.get(priority_name, {}).get("health", 0)
@@ -1371,7 +1615,8 @@ def render_battlefield(game_state, player):
         key="priority",
     )
 
-    queue_zone_label("Mulligan", WIDTH - HAND_MARGIN - 100, action_label_y + label_height + 8, align="right", key="mulligan")
+    if can_show_mulligan(game_state, player):
+        queue_zone_label("Mulligan", WIDTH - HAND_MARGIN - 100, action_label_y + label_height + 8, align="right", key="mulligan")
     queue_zone_label(
         "End Turn",
         WIDTH - HAND_MARGIN,
@@ -1426,6 +1671,10 @@ def show_hand_context_menu(card_entry, pos):
     menu_width = 160
     item_height = 22
     options = [("Discard", "discard")]
+    if card_entry.get("type") == "Spell":
+        targeting = get_spell_targeting(card_entry)
+        if not targeting.get("needs_creature"):
+            options.insert(0, ("Cast", "cast"))
     menu_height = item_height * len(options) + 8
     x, y = pos
     x = min(x, WIDTH - menu_width - HAND_MARGIN)
@@ -1650,11 +1899,44 @@ def move_selected_to_lands(game_state, player):
     return True
 
 def handle_target_selection(selected_id, target_id):
-    print(f"Selected card {selected_id} -> target {target_id}")
+    state = wiz.game.get_game_state()
+    player = wiz.current_player()
+    hand = state.get(player, {}).get("hand", {})
+    card = hand.get(str(selected_id))
+    if not card or card.get("type") != "Spell":
+        print(f"Selected card {selected_id} -> target {target_id}")
+        return False
+
+    targeting = get_spell_targeting(card)
+    if not targeting.get("needs_creature"):
+        return False
+
+    if targeting.get("scope") == "friendly":
+        if str(target_id) not in state.get(player, {}).get("creatures", {}):
+            popup("Choose a friendly creature")
+            return False
+    elif targeting.get("scope") == "enemy_active":
+        enemy = wiz.p2 if player == wiz.p1 else wiz.p1
+        if str(target_id) not in state.get(enemy, {}).get("creatures", {}):
+            popup("Choose an enemy creature")
+            return False
+
+    discard_value = get_discard_value(card)
+    opponent = wiz.p2 if player == wiz.p1 else wiz.p1
+    opponent_hand = len(state.get(opponent, {}).get("hand", {}))
+    if wiz.cast_spell(selected_id, target_id, player=player):
+        add_notification(f"{player} cast {card.get('name', 'a spell')}")
+        if discard_value and opponent_hand < discard_value:
+            add_notification(f"{opponent} discarded all cards")
+        activate_pending_discard(wiz.game.get_game_state())
+        return True
+    return False
 
 # Handle left-click interactions
 def handle_left_click(game_state, player, pos):
     global selected_card_id, active_selected_card_id, context_menu, popup_state, selected_blocker_id
+    if game_over_state.get("active"):
+        return
 
     if context_menu.get("visible"):
         clicked_option = False
@@ -1677,18 +1959,56 @@ def handle_left_click(game_state, player, pos):
                         toggle_attacker(game_state, player, creature_id)
                 elif menu_kind == "hand":
                     card_id = context_menu.get("card_id")
+                    hand = game_state.get(player, {}).get("hand", {})
+                    card = hand.get(card_id, {})
                     if card_id and action == "discard":
-                        hand = game_state.get(player, {}).get("hand", {})
-                        if len(hand) <= 7:
+                        force_discard = discard_state.get("active") and discard_state.get("player") == player
+                        if force_discard:
+                            required_count = int(discard_state.get("required", 0) or 0)
+                            if discard_state.get("discarded", 0) >= required_count:
+                                announce(f"Discard limit reached: confirm {required_count}")
+                                return
+                            if wiz.game.discard_cards(player, [card_id]):
+                                discard_state["discarded"] += 1
+                                add_notification(f"{player} discarded {card.get('name', card_id)}")
+                        elif len(hand) <= 7:
                             popup("You cannot discard with 7 or fewer cards")
                         else:
-                            card = hand.get(card_id, {})
                             if wiz.game.discard_cards(player, [card_id]):
                                 add_notification(f"{player} discarded {card.get('name', card_id)}")
+                    if card_id and action == "cast":
+                        targeting = get_spell_targeting(card)
+                        target_player = None
+                        if targeting.get("needs_player"):
+                            target_player = wiz.p2 if player == wiz.p1 else wiz.p1
+                        discard_value = get_discard_value(card)
+                        opponent = wiz.p2 if player == wiz.p1 else wiz.p1
+                        opponent_hand = len(game_state.get(opponent, {}).get("hand", {}))
+                        if wiz.cast_spell(card_id, target_player, player=player):
+                            add_notification(f"{player} cast {card.get('name', 'a spell')}")
+                            if discard_value and opponent_hand < discard_value:
+                                add_notification(f"{opponent} discarded all cards")
+                            activate_pending_discard(wiz.game.get_game_state())
                 break
         context_menu["visible"] = False
         if clicked_option:
             return
+
+    if discard_state.get("active") and discard_state.get("player") == player:
+        required_count = int(discard_state.get("required", 0) or 0)
+        discard_confirm = label_rects.get("discard_confirm")
+        if discard_confirm and discard_confirm.collidepoint(pos):
+            if discard_state.get("discarded", 0) != required_count:
+                popup(f"You have to choose {required_count} cards to discard")
+                return
+            add_notification(f"{player} discarded {discard_state.get('discarded', 0)} card(s)")
+            discard_state["active"] = False
+            discard_state["discarded"] = 0
+            wiz.priority_player = discard_state.get("return_player") or wiz.current_player()
+            clear_pending_discard()
+            popup_state["visible"] = False
+            return
+        return
 
     if combat_prompt_state.get("visible"):
         confirm_rect = combat_prompt_state.get("confirm_rect")
@@ -1701,7 +2021,10 @@ def handle_left_click(game_state, player, pos):
             combat_prompt_state["visible"] = False
             return
         if cancel_rect and cancel_rect.collidepoint(pos):
-            reset_combat_ui()
+            if combat_prompt_state.get("mode") == "blockers":
+                clear_blockers_ui()
+            else:
+                reset_combat_ui()
             combat_prompt_state["visible"] = False
             return
         rect = combat_prompt_state.get("rect")
@@ -1730,7 +2053,7 @@ def handle_left_click(game_state, player, pos):
             popup("You cannot mulligan after playing a card")
             return
         if not wiz.mulligan():
-            popup("Mulligan only available on your first turn")
+            popup("You can only mulligan before playing a card")
         else:
             add_notification(f"{player} mulligans")
             draw_animation["active"] = False
@@ -1821,7 +2144,8 @@ def handle_left_click(game_state, player, pos):
     if selected_card_id:
         for hit in reversed(creature_hitboxes):
             if hit["rect"].collidepoint(pos):
-                handle_target_selection(selected_card_id, hit["id"])
+                if handle_target_selection(selected_card_id, hit["id"]):
+                    selected_card_id = None
                 return
         for hit in reversed(land_hitboxes):
             if hit["rect"].collidepoint(pos):
@@ -1834,9 +2158,12 @@ def handle_left_click(game_state, player, pos):
 
 def handle_right_click(game_state, player, pos):
     global context_menu
+    if game_over_state.get("active"):
+        return
     for hit in reversed(hand_hitboxes):
         if hit["rect"].collidepoint(pos):
-            show_hand_context_menu({"id": hit["id"]}, pos)
+            card_entry = hit.get("card", {})
+            show_hand_context_menu({"id": hit["id"], **card_entry}, pos)
             return
     for hit in reversed(active_creature_hitboxes):
         if hit["rect"].collidepoint(pos) and hit.get("owner") == player:
@@ -1933,6 +2260,8 @@ while running:
     view_player = wiz.priority_player or wiz.current_player()
     detect_creature_stat_changes(state)
     detect_draw_animation(state, view_player)
+    activate_pending_discard(state)
+    check_game_over(state)
     update_image_paths(state)
 
     for event in pygame.event.get():
@@ -1942,9 +2271,11 @@ while running:
             WIDTH, HEIGHT = event.w, event.h
             screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            handle_left_click(state, view_player, event.pos)
+            if not game_over_state.get("active"):
+                handle_left_click(state, view_player, event.pos)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-            handle_right_click(state, view_player, event.pos)
+            if not game_over_state.get("active"):
+                handle_right_click(state, view_player, event.pos)
 
     screen.fill(BACKGROUND_COLOR)
     on_mouse_hover(state, view_player)
@@ -1968,9 +2299,17 @@ while running:
         "\n3. Right click on a land to tap it.\n4. Right click on a creature to attack.\n5. Click on spells to target creatures or players.")
         popup_shown = True
     if selected_card_id:
-        anchor = get_selected_anchor()
-        if anchor:
-            pygame.draw.line(screen, (255, 255, 255), anchor, pygame.mouse.get_pos(), 2)
+        current_hand = state.get(view_player, {}).get("hand", {})
+        selected_card = current_hand.get(str(selected_card_id))
+        draw_line = False
+        if selected_card:
+            if selected_card.get("type") == "Spell":
+                targeting = get_spell_targeting(selected_card)
+                draw_line = targeting.get("needs_creature")
+        if draw_line:
+            anchor = get_selected_anchor()
+            if anchor:
+                pygame.draw.line(screen, (255, 255, 255), anchor, pygame.mouse.get_pos(), 2)
     pygame.display.flip()
 
 pygame.quit()

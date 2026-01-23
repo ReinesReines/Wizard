@@ -3,55 +3,6 @@ try:
 except:
     from .modules.cards import *
 
-"""
-Effects parser
-
-SYNTAX:
-; - separator for next instruction
-| - split description text
-/ - or (for alternative options)
-
-TRIGGERS (all end with ?):
-tap?        - activates when tapped
-attack?     - triggers when attacking
-block?      - triggers when blocking
-enter?      - triggers when this card enters the battlefield
-
-MODIFIERS:
-inc [field] [n]     - increase field by n (default 1)
-dec [field] [n]     - decrease field by n (default 1)
-
-ACTIONS:
-gen [color]         - generates mana of specified color (green/blue/red)
-draw [n]            - draw n cards
-discard [n]         - target player discards n cards
-heal [n]            - gain n life
-count [type]        - count cards of specified type
-return [from] [to]  - move card between zones
-
-STATIC ABILITIES (keywords):
-haste       - can attack the turn it enters
-flying      - can only be blocked by creatures with flying or reach
-reach       - can block creatures with flying
-unblockable - cannot be blocked
-vigilant    - doesn't tap when attacking
-entertap    - enters the battlefield tapped
-
-SPECIAL:
-global              - applies effect to all your creatures
-(graveyard count X) - dynamic value from graveyard
-
-EXAMPLES:
-tap? gen green                     - Tap to generate green mana
-attack? inc att 1                  - Gain +1 attack when attacking
-enter? draw 1                      - Draw a card when entering
-inc att (graveyard count Skeleton) - +1 attack per skeleton in graveyard
-entertap; tap? gen green/blue      - Enters tapped, tap for green or blue mana
-vigilant                           - Doesn't tap when attacking
-haste; flying                      - Can attack immediately and can only be blocked by flying creatures
-"""
-
-# TODO: finish this file
 
 ##############
 # LAND CARDS #
@@ -61,6 +12,8 @@ haste; flying                      - Can attack immediately and can only be bloc
 forest = LandCards(name="Forest", generic_mana=0, sp_mana="", description="Tap to add one green mana.", effect="tap? gen green")
 island = LandCards(name="Island", generic_mana=0, sp_mana="", description="Tap to add one blue mana.", effect="tap? gen blue")
 mountain = LandCards(name="Mountain", generic_mana=0, sp_mana="", description="Tap to add one red mana.", effect="tap? gen red")
+
+snake_pit = LandCards(name="Snake Pit", generic_mana=0, sp_mana="", description="Tap to add one green mana.", effect="tap? gen green")
 
 # Dual lands (enter tapped but produce two colors)
 tropical_grove = LandCards(name="Tropical Grove", generic_mana=0, sp_mana="", description="Enters the battlefield tapped.|Tap to add one green or blue mana.", effect="entertap; tap? gen green/blue")
@@ -96,13 +49,13 @@ berserker = SummonCard(name="Berserker", generic_mana=2, sp_mana="red", descript
 # Red spell cards
 fireball = SpellCard(name="Fireball", generic_mana=3, sp_mana="red", description="Deal 3 damage to target creature.", effect="damage 3 creatureid")
 wild_hunt = SpellCard(name="Wild Hunt", generic_mana=4, sp_mana="red", description="Give all attacking creatures you control trample.", effect="global add trample attackonly")
-berserk = SpellCard(name="Berserk", generic_mana=2, sp_mana="red", description="Give target creature +2 attack and -1 endurance.", effect="all inc att 2; all dec end 1")
+berserk = SpellCard(name="Berserk", generic_mana=2, sp_mana="red", description="Give all creatures +2 attack and -1 endurance.", effect="all inc att 2; attack? dec end 1")
 scorched_earth = SpellCard(name="Scorched Earth", generic_mana=9, sp_mana="red", description="Destroy all active creatures.|swortched erth mate", effect="all destroy")
 rot = SpellCard(name="Rot", generic_mana=3, sp_mana="red", description="Force your opponent to discard 2 cards.|brain rot", effect="discard 2 player")
-wrath = SpellCard(name="Wrath", generic_mana=3, sp_mana="red", description="Deal 4 damage to a target creature. Discard a card.", effect="destroy creatureid; discard 1 player")
+wrath = SpellCard(name="Wrath", generic_mana=3, sp_mana="red", description="Deal 4 damage to a target creature. Discard a card.", effect="destroy creatureid; discard 1")
 
 # Blue spell cards
-oath = SpellCard(name="Oath", generic_mana=3, sp_mana="blue", description="You do not reset your mana pool at the end of your turn.", effect="nomanareset")
+oath = SpellCard(name="Oath", generic_mana=0, sp_mana="blue", description="You do not reset your mana pool at the end of your turn.", effect="nomanareset")
 polymorph_skeleton = SpellCard(name="Skeleton Polymorph", generic_mana=3, sp_mana="blue", description="Morph target creature into a skeleton.|ragh", effect="morph creatureid \"Skeleton\"")
 bless = SpellCard(name="Bless", generic_mana=5, sp_mana="blue", description="Give a creature invulnerability.", effect="add invuln creatureid")
 wingify = SpellCard(name="Wingify", generic_mana=2, sp_mana="blue", description="Give a creature flying.|wingardium leviosa", effect="add flying creatureid")

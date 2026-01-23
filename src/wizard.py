@@ -25,12 +25,12 @@ class Wizard:
         creature_pool = [
             slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf,
             skeleton, phantom_warrior, arcane_scholar, goblin_raider, 
-            fire_elemental, dragon_whelp, berserker
+            fire_elemental, dragon_whelp, berserker, skeleton_army, sea_serpent
         ]
         
         land_pool = [
             forest, forest, forest, island, island, island,
-            mountain, mountain, tropical_grove, volcanic_peak
+            mountain, mountain, tropical_grove, volcanic_peak, wild_highlands
         ]
 
         spell_pool = [
@@ -194,14 +194,6 @@ class Wizard:
     def mulligan(self):
         state = self.game.get_game_state()
         player = state["current_player"]
-        turn_number = state.get("turn_number", 1)
-
-        if not (
-            (player == self.p1 and turn_number == 1) or
-            (player == self.p2 and turn_number == 2)
-        ):
-            print("Mulligan not allowed after your first turn.")
-            return False
 
         hand = state[player]["hand"]
         deck = state[player]["deck"]
