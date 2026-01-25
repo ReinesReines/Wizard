@@ -1942,6 +1942,9 @@ def start_new_turn_ui():
 def toggle_attacker(game_state, player, creature_id):
     global attacker_select_id
     creature_id = str(creature_id)
+    if getattr(wiz, "combat_used_turn", False):
+        popup("Combat already resolved this turn")
+        return False
     if getattr(wiz, "combat_phase", None) is None:
         wiz.begin_combat(player)
     if getattr(wiz, "combat_phase", None) != "attackers" or getattr(wiz, "priority_player", None) != player:

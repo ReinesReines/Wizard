@@ -77,6 +77,7 @@ class Wizard:
         self.pending_blocks = {}
         self.combat_attacker = None
         self.combat_defender = None
+        self.combat_used_turn = False
         self.card_played_this_turn = 0
 
     def current_player(self):
@@ -86,6 +87,7 @@ class Wizard:
     def start_new_turn(self):
         self.game.cleanup_temporary_effects()
         self.card_played_this_turn = 0
+        self.combat_used_turn = False
         self.game.check_creature_deaths()
         
         state = self.game.get_game_state()
@@ -271,6 +273,9 @@ class Wizard:
         return state[current_player]["health"]
 
     def begin_combat(self, attacker):
+        if self.combat_used_turn:
+            print("Combat already resolved this turn.")
+            return False
         defender = self.p2 if attacker == self.p1 else self.p1
         self.combat_phase = "attackers"
         self.priority_player = attacker
@@ -425,6 +430,7 @@ class Wizard:
         
         self.game.calculate_combat_damage()
         self.game.resolve_damage_queue()
+        self.combat_used_turn = True
         
         state = self.game.get_game_state()
         
