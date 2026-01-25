@@ -1413,7 +1413,7 @@ class GameEngine:
                     source_player = opponent
 
             if source_id is not None and source_player:
-                if not is_alive(source_player, source_id):
+                if source_player == current_player and not is_alive(source_player, source_id):
                     continue
             
             if target_type == "player":

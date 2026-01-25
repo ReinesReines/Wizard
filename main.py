@@ -222,6 +222,13 @@ def load_pil_image(path):
     return image
 
 
+def invalidate_image_cache(path):
+    if path in pil_cache:
+        del pil_cache[path]
+    if path in image_cache:
+        del image_cache[path]
+
+
 def needs_temp_image(card_dict, creature_entry):
     if not creature_entry:
         return False
@@ -1342,12 +1349,24 @@ def format_stat_value(value, is_invuln=False):
     return str(value)
 
 
-def format_card_stats(card_dict):
+def format_card_stats(card_dict, base_defence=None):
     attack = card_dict.get("attack")
     defence = card_dict.get("defence")
+    if base_defence is None:
+        base_defence = card_dict.get("base_defence")
+    # Show both base and current defence if different and both are not None
+    if (
+        base_defence is not None
+        and defence is not None
+        and base_defence != defence
+        and not has_invuln_status(card_dict)
+    ):
+        defence_str = f"{defence}/{base_defence}"
+    else:
+        defence_str = format_stat_value(defence, is_invuln=has_invuln_status(card_dict))
     return (
         format_stat_value(attack),
-        format_stat_value(defence, is_invuln=has_invuln_status(card_dict)),
+        defence_str,
     )
 
 
@@ -1465,6 +1484,7 @@ def detect_creature_stat_changes(game_state):
                 base_path = card_dict.get("image_path")
                 if base_path and os.path.exists(base_path):
                     update_card_stats(wiz.game._reconstruct_card(card_dict), base_path, base_path)
+                    invalidate_image_cache(base_path)
                     changed = True
             if new_def is not None and prev_def is not None and new_def != prev_def:
                 player, cid = key
@@ -1476,6 +1496,7 @@ def detect_creature_stat_changes(game_state):
                 base_path = card_dict.get("image_path")
                 if base_path and os.path.exists(base_path):
                     update_card_stats(wiz.game._reconstruct_card(card_dict), base_path, base_path)
+                    invalidate_image_cache(base_path)
                     changed = True
         prev_status = prev_creature_status.get(key)
         new_status = current_status.get(key)
@@ -1554,7 +1575,7 @@ def build_combat_summary_lines(pre_state, damage_queue):
             attacker_entry = pre_state.get(attacker_player, {}).get("creatures", {}).get(str(attacker_id), {})
             attacker_card = attacker_entry.get("card", {})
             attacker_name = attacker_card.get("name", str(attacker_id))
-            attacker_att, attacker_end = format_card_stats(attacker_card)
+            attacker_att, attacker_end = format_card_stats(attacker_card, attacker_entry.get("base_defence"))
             direct_damage = direct_damage_by_attacker.get(str(attacker_id), 0)
             if direct_damage:
                 lines.append(
@@ -1565,7 +1586,7 @@ def build_combat_summary_lines(pre_state, damage_queue):
         attacker_entry = pre_state.get(attacker_player, {}).get("creatures", {}).get(str(attacker_id), {})
         attacker_card = attacker_entry.get("card", {})
         attacker_name = attacker_card.get("name", str(attacker_id))
-        attacker_att, attacker_end = format_card_stats(attacker_card)
+        attacker_att, attacker_end = format_card_stats(attacker_card, attacker_entry.get("base_defence"))
         attacker_stats = (attacker_att, attacker_end)
         attacker_damage = damage_to.get((attacker_player, str(attacker_id)), 0)
         attacker_dead = (
@@ -1577,7 +1598,7 @@ def build_combat_summary_lines(pre_state, damage_queue):
             blocker_entry = pre_state.get(defender_player, {}).get("creatures", {}).get(str(blocker_id), {})
             blocker_card = blocker_entry.get("card", {})
             blocker_name = blocker_card.get("name", str(blocker_id))
-            blocker_att, blocker_end = format_card_stats(blocker_card)
+            blocker_att, blocker_end = format_card_stats(blocker_card, blocker_entry.get("base_defence"))
             blocker_stats = (blocker_att, blocker_end)
             blocker_damage = damage_to.get((defender_player, str(blocker_id)), 0)
             blocker_dead = (
@@ -1655,7 +1676,11 @@ def build_hover_label_lines(card_dict):
     if "attack" in card_dict and card_dict.get("attack") is not None:
         lines.append(f"att: {att}")
     if "defence" in card_dict and card_dict.get("defence") is not None:
-        lines.append(f"end: {end}")
+        # If showing both current/base, clarify label
+        if "/" in end:
+            lines.append(f"end: {end} (current/base)")
+        else:
+            lines.append(f"end: {end}")
     statuses = get_status_list(card_dict)
     if statuses:
         lines.append(f"status: {', '.join(statuses)}")
@@ -1745,9 +1770,10 @@ def build_attackers_preview_lines(game_state, attacker_ids):
         lines.append("(none)")
     else:
         for cid in attacker_ids:
-            card = creatures.get(str(cid), {}).get("card", {})
+            creature_entry = creatures.get(str(cid), {})
+            card = creature_entry.get("card", {})
             name = card.get("name", str(cid))
-            att, end = format_card_stats(card)
+            att, end = format_card_stats(card, creature_entry.get("base_defence"))
             statuses = get_status_list(card)
             status_text = f" [{', '.join(statuses)}]" if statuses else ""
             lines.append(f"- {name} ({att}/{end}){status_text}")
@@ -1764,13 +1790,15 @@ def build_blockers_preview_lines(game_state, block_assignments):
         lines.append("No defenders declared.")
     else:
         for attacker_id, blocker_ids in block_assignments.items():
-            atk_card = attacker_creatures.get(str(attacker_id), {}).get("card", {})
+            atk_entry = attacker_creatures.get(str(attacker_id), {})
+            atk_card = atk_entry.get("card", {})
             atk_name = atk_card.get("name", str(attacker_id))
-            atk_att, atk_end = format_card_stats(atk_card)
+            atk_att, atk_end = format_card_stats(atk_card, atk_entry.get("base_defence"))
             for blocker_id in blocker_ids:
-                blk_card = defender_creatures.get(str(blocker_id), {}).get("card", {})
+                blk_entry = defender_creatures.get(str(blocker_id), {})
+                blk_card = blk_entry.get("card", {})
                 blk_name = blk_card.get("name", str(blocker_id))
-                blk_att, blk_end = format_card_stats(blk_card)
+                blk_att, blk_end = format_card_stats(blk_card, blk_entry.get("base_defence"))
                 lines.append(
                     f"- {blk_name} ({blk_att}/{blk_end}) -> {atk_name} ({atk_att}/{atk_end})"
                 )
@@ -1956,15 +1984,17 @@ def toggle_attacker(game_state, player, creature_id):
     pending = list(getattr(wiz, "pending_attackers", []))
     if creature_id in pending:
         pending.remove(creature_id)
-        creature = game_state[player]["creatures"].get(creature_id, {}).get("card", {})
-        att, end = format_card_stats(creature)
+        creature_entry = game_state[player]["creatures"].get(creature_id, {})
+        creature = creature_entry.get("card", {})
+        att, end = format_card_stats(creature, creature_entry.get("base_defence"))
         add_notification(f"Attacker removed: {creature.get('name', creature_id)} ({att}/{end})")
         if attacker_select_id == creature_id:
             attacker_select_id = None
     else:
         pending.append(creature_id)
-        creature = game_state[player]["creatures"].get(creature_id, {}).get("card", {})
-        att, end = format_card_stats(creature)
+        creature_entry = game_state[player]["creatures"].get(creature_id, {})
+        creature = creature_entry.get("card", {})
+        att, end = format_card_stats(creature, creature_entry.get("base_defence"))
         add_notification(f"Attacker queued: {creature.get('name', creature_id)} ({att}/{end})")
         attacker_select_id = creature_id
     wiz.queue_attackers(player, pending)
@@ -2003,17 +2033,20 @@ def assign_blocker(game_state, defender, blocker_id, attacker_id):
         new_blocks[attacker_id] = [b for b in new_blocks[attacker_id] if b != blocker_id]
         if not new_blocks[attacker_id]:
             new_blocks.pop(attacker_id, None)
-        blk_card = defender_creatures.get(blocker_id, {}).get("card", {})
-        blk_att, blk_end = format_card_stats(blk_card)
+        blk_entry = defender_creatures.get(blocker_id, {})
+        blk_card = blk_entry.get("card", {})
+        blk_att, blk_end = format_card_stats(blk_card, blk_entry.get("base_defence"))
         add_notification(f"Blocker removed: {blk_card.get('name', blocker_id)} ({blk_att}/{blk_end})")
     else:
         lst = new_blocks.get(attacker_id, [])
         lst.append(blocker_id)
         new_blocks[attacker_id] = lst
-        blk_card = defender_creatures.get(blocker_id, {}).get("card", {})
-        atk_card = game_state.get(get_combat_attacker() or "", {}).get("creatures", {}).get(attacker_id, {}).get("card", {})
-        blk_att, blk_end = format_card_stats(blk_card)
-        atk_att, atk_end = format_card_stats(atk_card)
+        blk_entry = defender_creatures.get(blocker_id, {})
+        blk_card = blk_entry.get("card", {})
+        atk_entry = game_state.get(get_combat_attacker() or "", {}).get("creatures", {}).get(attacker_id, {})
+        atk_card = atk_entry.get("card", {})
+        blk_att, blk_end = format_card_stats(blk_card, blk_entry.get("base_defence"))
+        atk_att, atk_end = format_card_stats(atk_card, atk_entry.get("base_defence"))
         add_notification(
             f"Blocker queued: {blk_card.get('name', blocker_id)} ({blk_att}/{blk_end}) -> "
             f"{atk_card.get('name', attacker_id)} ({atk_att}/{atk_end})"
@@ -2057,6 +2090,7 @@ def confirm_blockers(game_state):
     summary_lines = build_combat_summary_lines(pre_state, damage_queue)
     wiz.game.resolve_damage_queue()
     state = wiz.game.get_game_state()
+    wiz.combat_used_turn = True
 
     wiz.combat_phase = None
     wiz.priority_player = None
