@@ -5,7 +5,10 @@ from typing import List, Dict
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 
-from game import GameEngine
+try:
+    from .game import GameEngine
+except:
+    from game import GameEngine
 from card_index import (
     # Creatures
     slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf,
