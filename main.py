@@ -51,12 +51,14 @@ pygame.display.set_caption("Wizard")
 pygame.display.set_icon(program_icon)
 pygame.mixer.init()
 
-def update_ui_scale():
+def update_ui_scale(mode=None):
     global CARD_SCALE, CARD_SPACING, HAND_MARGIN
+    active_mode = mode or globals().get("ui_mode", "game")
     scale_w = WIDTH / 800
     scale_h = HEIGHT / 600
     scale = min(scale_w, scale_h)
-    CARD_SCALE = max(0.2, min(0.6, 0.22 * scale))
+    base = 0.22 if active_mode == "game" else 0.28
+    CARD_SCALE = max(0.2, min(0.6, base * scale * 1.4))
     CARD_SPACING = max(18, int(20 * scale))
     HAND_MARGIN = max(14, int(16 * scale))
 
@@ -3011,6 +3013,7 @@ while running:
                         deck2 = build_deck_from_counts(load_deck_counts(p2_path))
                         start_game(deck1, deck2)
                         ui_mode = "game"
+                        update_ui_scale("game")
                 elif deck_select_state.get("assign_prompt"):
                     if rects.get("assign_p1") and rects["assign_p1"].collidepoint(event.pos):
                         deck_select_state["selected"]["p1"] = deck_select_state["assign_prompt"]

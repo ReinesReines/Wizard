@@ -724,6 +724,7 @@ class GameEngine:
             
             # Clear summoning sickness (affects both tapped and untapped creatures)
             creature_data["summoning_sickness"] = False
+            creature_data["attacked_this_turn"] = False
         
         # Untap lands
         for land_id, land_data in player_data["lands"].items():
@@ -1043,9 +1044,11 @@ class GameEngine:
                 self._info(f"{card['name']} attacks and taps.")
             else:
                 self._info(f"{card['name']} attacks (vigilant, stays untapped).")
+            creature_data["attacked_this_turn"] = True
         
         # Store attackers in combat state
         game_state["combat"]["attackers"] = attackers
+        game_state["combat"]["attacker"] = player
         
         self._info(f"Total attackers: {len(attackers)}.")
         
@@ -1134,6 +1137,8 @@ class GameEngine:
         
         if creature_data["card"]["tapped"] == 1:
             return False
+        if creature_data.get("attacked_this_turn"):
+            return False
         
         if creature_data.get("summoning_sickness", False):
             return False
@@ -1151,6 +1156,8 @@ class GameEngine:
         creature_data = player_data["creatures"][creature_id_str]
         card = creature_data.get("card", {})
         if card.get("tapped") == 1:
+            return "creature has already attacked this turn"
+        if creature_data.get("attacked_this_turn"):
             return "creature has already attacked this turn"
         if creature_data.get("summoning_sickness", False):
             return "creature has summoning sickness"
@@ -1213,7 +1220,7 @@ class GameEngine:
         self._info("Combat damage calculation begins.")
         
         # Get current and opposing players
-        current_player = game_state["current_player"]
+        current_player = game_state.get("combat", {}).get("attacker") or game_state["current_player"]
         opponent = self.player2 if current_player == self.player1 else self.player1
         
         attackers = game_state["combat"]["attackers"]
