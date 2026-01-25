@@ -29,6 +29,8 @@ LOGO_PATH = os.path.join(ASSETS_PATH, "menu", "logo.png")
 ICON_PATH = os.path.join(ASSETS_PATH, "menu", "wizard.png")
 DIZZY_PATH = os.path.join(ASSETS_PATH, "menu", "dizzy.png")
 SILK_PATH = os.path.join(ASSETS_PATH, "fonts", "Silkscreen-Regular.ttf")
+MENU_MUSIC_PATH = os.path.join(ASSETS_PATH, "music", "color_your_night.mp3")
+GAME_MUSIC_PATH = os.path.join(ASSETS_PATH, "music", "life_will_change.mp3")
 HAS_PLAYED_LAND = False
 DECKS_PATH = os.path.join(os.path.dirname(__file__), "db", "decks")
 
@@ -47,6 +49,7 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("Wizard")
 pygame.display.set_icon(program_icon)
+pygame.mixer.init()
 
 def update_ui_scale():
     global CARD_SCALE, CARD_SPACING, HAND_MARGIN
@@ -59,6 +62,23 @@ def update_ui_scale():
 
 
 update_ui_scale()
+
+
+def set_music(track_path):
+    if not track_path or not os.path.exists(track_path):
+        return
+    if music_state.get("current") == track_path:
+        return
+    pygame.mixer.music.load(track_path)
+    pygame.mixer.music.play(-1)
+    music_state["current"] = track_path
+
+
+def apply_music_state():
+    if music_state.get("muted"):
+        pygame.mixer.music.set_volume(0)
+    else:
+        pygame.mixer.music.set_volume(0.6)
 
 image_cache = {}
 pil_cache = {}
@@ -146,6 +166,7 @@ deck_select_state = {
     "selected": {"p1": None, "p2": None},
 }
 deck_name_state = {"active": False, "value": ""}
+music_state = {"muted": False, "current": None}
 
 try:
     card_font = pygame.font.Font(SILK_PATH, 18)
@@ -2167,8 +2188,9 @@ def render_battlefield(game_state, player):
 
     priority_name = wiz.priority_player or wiz.current_player()
     priority_health = game_state.get(priority_name, {}).get("health", 0)
+    mute_label = "Muted" if music_state.get("muted") else "Music On"
     queue_zone_label(
-        f"Priority: {priority_name} ({priority_health}/20)",
+        f"Priority: {priority_name} ({priority_health}/20) | {mute_label}",
         WIDTH - HAND_MARGIN,
         HAND_MARGIN,
         align="right",
@@ -3010,6 +3032,9 @@ while running:
             if ui_mode == "deck_creator":
                 deck_creator_state["scroll_y"] += event.y * 30
         elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_m:
+                music_state["muted"] = not music_state.get("muted")
+                apply_music_state()
             if deck_name_state.get("active"):
                 if event.key == pygame.K_ESCAPE:
                     deck_name_state.update({"active": False, "value": ""})
@@ -3034,18 +3059,26 @@ while running:
 
     screen.fill(BACKGROUND_COLOR)
     if ui_mode == "menu":
+        set_music(MENU_MUSIC_PATH)
+        apply_music_state()
         render_main_menu()
         render_popup()
     elif ui_mode == "deck_creator":
+        set_music(MENU_MUSIC_PATH)
+        apply_music_state()
         on_mouse_hover_deck_creator()
         render_deck_creator()
         render_hover_label()
         render_deck_name_prompt()
         render_popup()
     elif ui_mode == "deck_select":
+        set_music(MENU_MUSIC_PATH)
+        apply_music_state()
         render_deck_select()
         render_popup()
     elif ui_mode == "game" and wiz is not None:
+        set_music(GAME_MUSIC_PATH)
+        apply_music_state()
         on_mouse_hover(state, view_player)
         render_battlefield(state, view_player)
         detect_creature_stat_changes(state)
