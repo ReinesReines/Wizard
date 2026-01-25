@@ -27,6 +27,7 @@ PLACEHOLDER_PATH = os.path.join(ASSETS_PATH, "placeholder.png")
 EXPLODE_GIF_PATH = os.path.join(ASSETS_PATH, "gif", "explode.gif")
 LOGO_PATH = os.path.join(ASSETS_PATH, "menu", "logo.png")
 ICON_PATH = os.path.join(ASSETS_PATH, "menu", "wizard.png")
+DIZZY_PATH = os.path.join(ASSETS_PATH, "menu", "dizzy.png")
 SILK_PATH = os.path.join(ASSETS_PATH, "fonts", "Silkscreen-Regular.ttf")
 HAS_PLAYED_LAND = False
 DECKS_PATH = os.path.join(os.path.dirname(__file__), "db", "decks")
@@ -297,6 +298,37 @@ def render_image_scaled(card_dict, x, y, scale):
     rect.bottomleft = (x, y)
     screen.blit(surface, rect)
     return rect
+
+
+def has_haste(card_dict):
+    status = str(card_dict.get("status", "")).lower()
+    effect = str(card_dict.get("effect", "")).lower()
+    return "haste" in status or "haste" in effect
+
+
+def load_dizzy_surface():
+    cached = image_cache.get("dizzy_icon")
+    if cached is not None:
+        return cached
+    if not os.path.exists(DIZZY_PATH):
+        image_cache["dizzy_icon"] = None
+        return None
+    pil_image = load_pil_image(DIZZY_PATH)
+    pil_image = pil_image.resize((32, 32), Image.NEAREST)
+    surface = pygame.image.fromstring(pil_image.tobytes(), pil_image.size, "RGBA")
+    image_cache["dizzy_icon"] = surface
+    return surface
+
+
+def draw_summoning_sickness_icon(rect):
+    if not rect:
+        return
+    icon = load_dizzy_surface()
+    if not icon:
+        return
+    icon_rect = icon.get_rect()
+    icon_rect.midbottom = (rect.centerx, rect.top - 6)
+    screen.blit(icon, icon_rect)
 
 
 def render_image_rotated(card_dict, x, y, angle):
@@ -866,6 +898,8 @@ def render_creature_row(game_state, player, y, align="left", filter_fn=None, att
             rect = render_image(card_dict, x, y + wobble)
         creature_hitboxes.append({"id": card_id, "rect": rect, "owner": player, "card": card_dict, "zone": "creatures"})
         creature_rects[str(card_id)] = rect
+        if creature_entry.get("summoning_sickness") and not has_haste(card_dict):
+            draw_summoning_sickness_icon(rect)
         if animate and selected_blocker_id == card_id:
             pygame.draw.rect(screen, (100, 200, 255), rect.inflate(6, 6), 2)
         x += rect.width + CARD_SPACING
@@ -915,12 +949,12 @@ def render_active_creature_deck(
     draw_queue = []
     for card_id, creature_entry in creatures:
         card_dict = creature_entry.get("card", {})
-        draw_queue.append((card_id, card_dict, x))
+        draw_queue.append((card_id, creature_entry, card_dict, x))
         x += card_step
 
     extra_offset = max(8, int(card_height * 0.2)) if alert else 0
 
-    for card_id, card_dict, card_x in draw_queue:
+    for card_id, creature_entry, card_dict, card_x in draw_queue:
         if card_id in (hovered_card_id, active_selected_card_id):
             continue
         y_offset = attack_offset if str(card_id) in attack_ids else 0
@@ -932,10 +966,12 @@ def render_active_creature_deck(
         active_creature_hitboxes.append(hit)
         creature_hitboxes.append(hit)
         active_creature_rects[str(card_id)] = rect
+        if creature_entry.get("summoning_sickness") and not has_haste(card_dict):
+            draw_summoning_sickness_icon(rect)
         if alert and str(card_id) in alert_ids:
             draw_pulse_outline(rect, (200, 60, 60), (255, 120, 120))
 
-    for card_id, card_dict, card_x in draw_queue:
+    for card_id, creature_entry, card_dict, card_x in draw_queue:
         if card_id != hovered_card_id or card_id == active_selected_card_id:
             continue
         y_offset = attack_offset if str(card_id) in attack_ids else 0
@@ -945,12 +981,14 @@ def render_active_creature_deck(
         active_creature_hitboxes.append(hit)
         creature_hitboxes.append(hit)
         active_creature_rects[str(card_id)] = rect
+        if creature_entry.get("summoning_sickness") and not has_haste(card_dict):
+            draw_summoning_sickness_icon(rect)
         if animate:
             draw_pulse_outline(rect, (255, 255, 255), (120, 200, 255))
         if alert and str(card_id) in alert_ids:
             draw_pulse_outline(rect, (200, 60, 60), (255, 120, 120))
 
-    for card_id, card_dict, card_x in draw_queue:
+    for card_id, creature_entry, card_dict, card_x in draw_queue:
         if card_id != active_selected_card_id:
             continue
         y_offset = attack_offset if str(card_id) in attack_ids else 0
@@ -960,6 +998,8 @@ def render_active_creature_deck(
         active_creature_hitboxes.append(hit)
         creature_hitboxes.append(hit)
         active_creature_rects[str(card_id)] = rect
+        if creature_entry.get("summoning_sickness") and not has_haste(card_dict):
+            draw_summoning_sickness_icon(rect)
         if animate:
             draw_pulse_outline(rect, (255, 215, 0), (255, 255, 255))
         if alert and str(card_id) in alert_ids:
@@ -1883,8 +1923,9 @@ def toggle_attacker(game_state, player, creature_id):
         wiz.begin_combat(player)
     if getattr(wiz, "combat_phase", None) != "attackers" or getattr(wiz, "priority_player", None) != player:
         return False
-    if not wiz.game.can_attack(player, creature_id):
-        popup("That creature cannot attack")
+    reason = wiz.game.can_attack_reason(player, creature_id)
+    if reason:
+        popup(reason)
         return False
     pending = list(getattr(wiz, "pending_attackers", []))
     if creature_id in pending:
@@ -2405,7 +2446,7 @@ def move_selected_to_creatures(game_state, player):
     if not wiz.game.pay_mana(player, generic_cost, color_cost):
         popup("Insufficient mana")
         return False
-    if not wiz.game.play_creature(player, selected_card_id):
+    if not wiz.play_creature(selected_card_id, player=player):
         return False
     add_notification(f"{player} has played {card.get('name', 'a creature')}")
     selected_card_id = None

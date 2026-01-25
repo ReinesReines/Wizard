@@ -1139,6 +1139,22 @@ class GameEngine:
             return False
         
         return True
+
+    def can_attack_reason(self, player, creature_id):
+        game_state = self._load_state()
+        if player not in game_state:
+            return "player not found"
+        creature_id_str = str(creature_id)
+        player_data = game_state[player]
+        if creature_id_str not in player_data["creatures"]:
+            return "creature not found"
+        creature_data = player_data["creatures"][creature_id_str]
+        card = creature_data.get("card", {})
+        if card.get("tapped") == 1:
+            return "creature has already attacked this turn"
+        if creature_data.get("summoning_sickness", False):
+            return "creature has summoning sickness"
+        return None
     
     def cleanup_temporary_effects(self):
         """

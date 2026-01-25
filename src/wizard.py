@@ -203,6 +203,10 @@ class Wizard:
         player = state["current_player"]
         turn_number = state.get("turn_number", 1)
 
+        if self.card_played_this_turn > 0:
+            print("Mulligan not allowed after playing a card.")
+            return False
+
         if not (
             (player == self.p1 and turn_number == 1) or
             (player == self.p2 and turn_number == 2)
