@@ -10,7 +10,7 @@ class EffectParser:
                'add', 'kill', 'morph', 'revive', 'nomanareset', 'castinc', 'castdec', 'invuln']
     TARGET_TYPES = ['creature', 'player']
     CONDITIONS = ['attackonly', 'blockonly']
-    PLACES = ['graveyard', 'deck']
+    PLACES = ['graveyard', 'deck', 'hand']
     FIELDS = ['att', 'end']
     
     def __init__(self):
@@ -41,6 +41,8 @@ class EffectParser:
             'action': None,
             'field': None,
             'value': None,
+            'amount': None,
+            'name': None,
             'target_type': None,
             'creatureid': False,
             'all': False,
@@ -99,6 +101,13 @@ class EffectParser:
                 result['value'] = 1
             
             if idx < len(tokens):
+                name_token = tokens[idx]
+                if isinstance(name_token, str) and name_token not in self.TARGET_TYPES and name_token != 'creatureid':
+                    if '/' not in name_token and name_token not in self.CONDITIONS:
+                        result['name'] = name_token
+                        idx += 1
+            
+            if idx < len(tokens):
                 if tokens[idx] == 'creatureid':
                     result['creatureid'] = True
                     idx += 1
@@ -112,18 +121,35 @@ class EffectParser:
                         idx += 1
         
         elif action == 'gen':
+            amount = 1
+            colors = []
             if idx < len(tokens):
-                colors = tokens[idx].split('/')
-                result['field'] = 'mana'
-                result['value'] = colors
+                if isinstance(tokens[idx], tuple):
+                    amount = tokens[idx]
+                    idx += 1
+                else:
+                    try:
+                        amount = int(tokens[idx])
+                        idx += 1
+                    except (ValueError, TypeError):
+                        amount = 1
+                if idx < len(tokens):
+                    colors = tokens[idx].split('/')
+            result['field'] = 'mana'
+            result['value'] = colors
+            result['amount'] = amount
         
         elif action in ['draw', 'discard', 'heal', 'damage']:
             if idx < len(tokens):
-                try:
-                    result['value'] = int(tokens[idx])
-                except ValueError:
-                    result['value'] = 1
-                idx += 1
+                if isinstance(tokens[idx], tuple):
+                    result['value'] = tokens[idx]
+                    idx += 1
+                else:
+                    try:
+                        result['value'] = int(tokens[idx])
+                    except (ValueError, TypeError):
+                        result['value'] = 1
+                    idx += 1
             else:
                 result['value'] = 1
             
@@ -240,7 +266,7 @@ class EffectParser:
             elif char == ')':
                 depth -= 1
                 if depth == 0:
-                    inner_tokens = paren_content.strip().split()
+                    inner_tokens = self._split_paren_tokens(paren_content)
                     tokens.append(tuple(inner_tokens))
                     paren_content = ""
             elif depth > 0:
@@ -257,6 +283,27 @@ class EffectParser:
         if current.strip():
             tokens.append(current.strip())
         
+        return tokens
+
+    def _split_paren_tokens(self, paren_content):
+        tokens = []
+        current = ""
+        in_quotes = False
+
+        for char in paren_content:
+            if char == '"':
+                in_quotes = not in_quotes
+                continue
+            if char.isspace() and not in_quotes:
+                if current.strip():
+                    tokens.append(current.strip())
+                    current = ""
+            else:
+                current += char
+
+        if current.strip():
+            tokens.append(current.strip())
+
         return tokens
     
     def get_triggers(self, effect_string):

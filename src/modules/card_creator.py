@@ -125,7 +125,10 @@ def create_card(card_data, output_path="card_output.png"):
         card.paste(placeholder, (placeholder_x, placeholder_y), placeholder)
         
         # Generic mana number
-        generic_mana = str(card_data.generic_mana)
+        if card_data.generic_mana > 0:
+            generic_mana = str(card_data.generic_mana + 1)
+        else:
+            generic_mana = str(card_data.generic_mana)
         mana_text_x = placeholder_x + 6
         mana_text_y = placeholder_y
         draw_crisp_text(card, (mana_text_x, mana_text_y), generic_mana, mana_font, (0, 0, 0, 255))

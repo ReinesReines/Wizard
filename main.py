@@ -1,27 +1,40 @@
 import os
 import math
+import json
+import random
+import copy
 import pygame
-from PIL import Image
+from PIL import Image, ImageSequence
 
 from src.modules.card_creator import create_card, update_card_stats
 from src.modules.parser import EffectParser
 from src.modules.utils import get_land_colors
 from src.wizard import Wizard
+from src.card_index import _land_cards, _universal_cards, _spell_cards
 
+# Game stuff
 WIDTH, HEIGHT = 800, 600
 BACKGROUND_COLOR = (106, 92, 125)
-CARD_SPACING = 10
+CARD_SPACING = 100
 HAND_MARGIN = 8
 CARD_SCALE = 0.5
 
+# load paths
 ASSETS_PATH = os.path.join(os.path.dirname(__file__), "src", "modules", "assets")
 CARDS_PATH = os.path.join(ASSETS_PATH, "cards")
 TEMP_PATH = os.path.join(ASSETS_PATH, "temp")
 PLACEHOLDER_PATH = os.path.join(ASSETS_PATH, "placeholder.png")
+EXPLODE_GIF_PATH = os.path.join(ASSETS_PATH, "gif", "explode.gif")
+LOGO_PATH = os.path.join(ASSETS_PATH, "menu", "logo.png")
+ICON_PATH = os.path.join(ASSETS_PATH, "menu", "wizard.png")
 SILK_PATH = os.path.join(ASSETS_PATH, "fonts", "Silkscreen-Regular.ttf")
 HAS_PLAYED_LAND = False
+DECKS_PATH = os.path.join(os.path.dirname(__file__), "db", "decks")
+
+program_icon = pygame.image.load(ICON_PATH)
 
 os.makedirs(TEMP_PATH, exist_ok=True)
+os.makedirs(DECKS_PATH, exist_ok=True)
 for filename in os.listdir(TEMP_PATH):
     if filename.endswith(".png"):
         try:
@@ -32,6 +45,19 @@ for filename in os.listdir(TEMP_PATH):
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("Wizard")
+pygame.display.set_icon(program_icon)
+
+def update_ui_scale():
+    global CARD_SCALE, CARD_SPACING, HAND_MARGIN
+    scale_w = WIDTH / 800
+    scale_h = HEIGHT / 600
+    scale = min(scale_w, scale_h)
+    CARD_SCALE = max(0.2, min(0.6, 0.22 * scale))
+    CARD_SPACING = max(18, int(20 * scale))
+    HAND_MARGIN = max(14, int(16 * scale))
+
+
+update_ui_scale()
 
 image_cache = {}
 pil_cache = {}
@@ -48,6 +74,10 @@ label_draw_queue = []
 view_player = None
 creature_rects = {}
 active_creature_rects = {}
+last_creature_rects = {}
+explosion_animations = []
+prev_creature_order = {}
+last_layout_metrics = {}
 selected_blocker_id = None
 notifications = []
 attacker_select_id = None
@@ -102,6 +132,19 @@ popup_state = {
 }
 popup_shown = False
 game_over_state = {"active": False, "winner": None, "loser": None}
+ui_mode = "menu"
+menu_buttons = {}
+deck_creator_state = {
+    "counts": {},
+    "scroll_y": 0,
+    "rects": {},
+}
+deck_select_state = {
+    "rects": {},
+    "assign_prompt": None,
+    "selected": {"p1": None, "p2": None},
+}
+deck_name_state = {"active": False, "value": ""}
 
 try:
     card_font = pygame.font.Font(SILK_PATH, 18)
@@ -241,6 +284,21 @@ def render_image(card_dict, x, y):
     return rect
 
 
+def render_image_scaled(card_dict, x, y, scale):
+    image_path = card_dict.get("image_path") or get_default_image_path(card_dict.get("name", ""))
+    pil_image = load_pil_image(image_path)
+    scaled_size = (
+        max(1, int(pil_image.width * scale)),
+        max(1, int(pil_image.height * scale)),
+    )
+    pil_image = pil_image.resize(scaled_size, Image.NEAREST)
+    surface = pygame.image.fromstring(pil_image.tobytes(), pil_image.size, "RGBA")
+    rect = surface.get_rect()
+    rect.bottomleft = (x, y)
+    screen.blit(surface, rect)
+    return rect
+
+
 def render_image_rotated(card_dict, x, y, angle):
     image_path = card_dict.get("image_path") or get_default_image_path(card_dict.get("name", ""))
     pil_image = load_pil_image(image_path)
@@ -255,6 +313,63 @@ def render_image_rotated(card_dict, x, y, angle):
     rect.bottomleft = (x, y)
     screen.blit(surface, rect)
     return rect
+
+
+def load_explode_frames():
+    cached = image_cache.get("explode_frames")
+    if cached is not None:
+        return cached
+    if not os.path.exists(EXPLODE_GIF_PATH):
+        image_cache["explode_frames"] = []
+        return []
+    scaled_size = (
+        128,
+        128,
+    )
+    frames = []
+    with Image.open(EXPLODE_GIF_PATH) as img:
+        for frame in ImageSequence.Iterator(img):
+            rgba = frame.convert("RGBA").resize(scaled_size, Image.NEAREST)
+            surface = pygame.image.fromstring(rgba.tobytes(), rgba.size, "RGBA")
+            frames.append(surface)
+    image_cache["explode_frames"] = frames
+    return frames
+
+
+def queue_explosion(rect):
+    frames = load_explode_frames()
+    if not frames or rect is None:
+        return
+    explosion_animations.append(
+        {
+            "frames": frames,
+            "start_ms": pygame.time.get_ticks(),
+            "frame_ms": 70,
+            "rect": rect.copy(),
+        }
+    )
+
+
+def render_explosions():
+    if not explosion_animations:
+        return
+    now = pygame.time.get_ticks()
+    active = []
+    for anim in explosion_animations:
+        frames = anim.get("frames", [])
+        if not frames:
+            continue
+        frame_ms = max(1, anim.get("frame_ms", 70))
+        elapsed = now - anim.get("start_ms", now)
+        index = elapsed // frame_ms
+        if index >= len(frames):
+            continue
+        frame_surface = frames[int(index)]
+        rect = frame_surface.get_rect()
+        rect.center = anim["rect"].center
+        screen.blit(frame_surface, rect)
+        active.append(anim)
+    explosion_animations[:] = active
 
 
 def is_vigilant_card(card_dict):
@@ -278,6 +393,339 @@ def render_land_image(card_dict, x, y, tapped=False):
     rect.bottomleft = (x, y)
     screen.blit(surface, rect)
     return rect
+
+
+def sanitize_deck_name(name):
+    name = str(name or "").strip()
+    if not name:
+        return ""
+    cleaned = []
+    for ch in name:
+        if ch.isalnum() or ch in (" ", "_"):
+            cleaned.append(ch)
+    cleaned = "".join(cleaned).strip().replace(" ", "_")
+    return cleaned[:20]
+
+
+def unique_cards(cards):
+    by_name = {}
+    for card in cards:
+        if hasattr(card, "name"):
+            by_name[card.name] = card
+    return list(by_name.values())
+
+
+LAND_CATALOG = unique_cards(_land_cards)
+CREATURE_CATALOG = unique_cards(_universal_cards)
+SPELL_CATALOG = unique_cards(_spell_cards)
+ALL_CATALOG = LAND_CATALOG + CREATURE_CATALOG + SPELL_CATALOG
+NAME_TO_CARD = {card.name: card for card in ALL_CATALOG}
+NAME_TO_TYPE = {card.name: "Land" for card in LAND_CATALOG}
+NAME_TO_TYPE.update({card.name: "Creature" for card in CREATURE_CATALOG})
+NAME_TO_TYPE.update({card.name: "Spell" for card in SPELL_CATALOG})
+
+
+def load_deck_files():
+    decks = []
+    if not os.path.isdir(DECKS_PATH):
+        return decks
+    for filename in sorted(os.listdir(DECKS_PATH)):
+        if not filename.endswith(".json"):
+            continue
+        path = os.path.join(DECKS_PATH, filename)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            decks.append({"name": data.get("name") or filename[:-5], "path": path, "data": data})
+        except Exception:
+            continue
+    return decks
+
+
+def save_deck_file(name, counts):
+    deck_name = sanitize_deck_name(name)
+    if not deck_name:
+        return None
+    payload = {
+        "name": deck_name,
+        "cards": {k: v for k, v in counts.items() if v > 0},
+    }
+    path = os.path.join(DECKS_PATH, f"{deck_name}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    return path
+
+
+def load_deck_counts(path):
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    cards = data.get("cards", {})
+    return {str(k): int(v) for k, v in cards.items() if int(v) > 0}
+
+
+def get_deck_totals(counts):
+    totals = {"Land": 0, "Creature": 0, "Spell": 0, "Total": 0}
+    for name, count in counts.items():
+        card_type = NAME_TO_TYPE.get(name)
+        if card_type in totals:
+            totals[card_type] += count
+        totals["Total"] += count
+    return totals
+
+
+def build_deck_from_counts(counts):
+    deck = []
+    for name, count in counts.items():
+        card = NAME_TO_CARD.get(name)
+        if not card:
+            continue
+        for _ in range(int(count)):
+            deck.append(copy.deepcopy(card))
+    return deck
+
+
+def generate_random_deck_counts():
+    counts = {}
+
+    def add_random(pool, needed):
+        added = 0
+        guard = 0
+        while added < needed and guard < 2000:
+            card = random.choice(pool)
+            name = card.name
+            if counts.get(name, 0) >= 4:
+                guard += 1
+                continue
+            counts[name] = counts.get(name, 0) + 1
+            added += 1
+            guard += 1
+
+    add_random(LAND_CATALOG, 20)
+    add_random(CREATURE_CATALOG, 20)
+    add_random(SPELL_CATALOG, 8)
+    total = sum(counts.values())
+    while total < 60:
+        add_random(ALL_CATALOG, 1)
+        total = sum(counts.values())
+    return counts
+
+
+def load_logo_surface():
+    cached = image_cache.get("menu_logo")
+    if cached is not None:
+        return cached
+    if not os.path.exists(LOGO_PATH):
+        image_cache["menu_logo"] = None
+        return None
+    pil_image = load_pil_image(LOGO_PATH)
+    max_width = int(WIDTH * 0.6)
+    scale = max_width / pil_image.width if pil_image.width > max_width else 1.0
+    scaled_size = (max(1, int(pil_image.width * scale)), max(1, int(pil_image.height * scale)))
+    pil_image = pil_image.resize(scaled_size, Image.NEAREST)
+    surface = pygame.image.fromstring(pil_image.tobytes(), pil_image.size, "RGBA")
+    image_cache["menu_logo"] = surface
+    return surface
+
+
+def draw_button(rect, text, bg=(255, 255, 255), fg=(20, 20, 20)):
+    pygame.draw.rect(screen, bg, rect, 0)
+    pygame.draw.rect(screen, (30, 30, 30), rect, 2)
+    text_surface = menu_font.render(text, True, fg)
+    text_rect = text_surface.get_rect(center=rect.center)
+    screen.blit(text_surface, text_rect)
+
+
+def render_main_menu():
+    menu_buttons.clear()
+    logo = load_logo_surface()
+    if logo:
+        rect = logo.get_rect()
+        rect.midtop = (WIDTH // 2, 50)
+        screen.blit(logo, rect)
+        logo_bottom = rect.bottom
+    else:
+        logo_bottom = 80
+
+    button_width = max(240, int(WIDTH * 0.5))
+    button_height = 48
+    center_x = WIDTH // 2
+    play_rect = pygame.Rect(0, 0, button_width, button_height)
+    play_rect.midtop = (center_x, logo_bottom + 40)
+    deck_rect = pygame.Rect(0, 0, button_width, button_height)
+    deck_rect.midtop = (center_x, play_rect.bottom + 20)
+    draw_button(play_rect, "Play")
+    draw_button(deck_rect, "Deck Creation")
+    menu_buttons["play"] = play_rect
+    menu_buttons["deck"] = deck_rect
+
+
+def render_deck_creator():
+    deck_creator_state["rects"] = {}
+    deck_creator_state["rects"]["cards"] = []
+    counts = deck_creator_state["counts"]
+    totals = get_deck_totals(counts)
+    draw_label("Deck Creator", HAND_MARGIN, HAND_MARGIN, key="deck_title")
+
+    back_rect = pygame.Rect(HAND_MARGIN, HAND_MARGIN + 28, 90, 28)
+    draw_button(back_rect, "Back", bg=(235, 235, 235))
+    deck_creator_state["rects"]["back"] = back_rect
+
+    right_panel_width = int(WIDTH * 0.24)
+    right_panel = pygame.Rect(WIDTH - right_panel_width - HAND_MARGIN, HAND_MARGIN + 50, right_panel_width, HEIGHT - HAND_MARGIN * 2 - 100)
+    panel_bg = pygame.Surface((right_panel.width, right_panel.height), pygame.SRCALPHA)
+    panel_bg.fill((0, 0, 0, 140))
+    screen.blit(panel_bg, right_panel.topleft)
+
+    stats_x = WIDTH - HAND_MARGIN
+    draw_label(f"Lands: {totals['Land']}", stats_x, HAND_MARGIN, align="right", draw_bg=False)
+    draw_label(f"Creatures: {totals['Creature']}", stats_x, HAND_MARGIN + 18, align="right", draw_bg=False)
+    draw_label(f"Spells: {totals['Spell']}", stats_x, HAND_MARGIN + 36, align="right", draw_bg=False)
+    draw_label(f"Total: {totals['Total']}", stats_x, HAND_MARGIN + 54, align="right", draw_bg=False)
+
+    list_y = right_panel.top + 12
+    list_x = right_panel.left + 10
+    line_h = label_font.get_linesize() + 4
+    selected_names = [f"{counts[name]}x {name}" for name in sorted(counts.keys()) if counts[name] > 0]
+    for item in selected_names[:int(right_panel.height / line_h) - 1]:
+        text_surface = label_font.render(item, True, (240, 240, 240))
+        screen.blit(text_surface, (list_x, list_y))
+        list_y += line_h
+
+    confirm_rect = pygame.Rect(0, 0, 180, 36)
+    confirm_rect.bottomright = (WIDTH - HAND_MARGIN, HEIGHT - HAND_MARGIN)
+    draw_button(confirm_rect, "Confirm", bg=(235, 235, 235))
+    deck_creator_state["rects"]["confirm"] = confirm_rect
+
+    placeholder = load_pil_image(PLACEHOLDER_PATH)
+    right_panel_width = int(WIDTH * 0.24)
+    available_width = max(200, WIDTH - right_panel_width - HAND_MARGIN * 2)
+    columns = 4
+    min_gap = 90 # max(20, int(available_width * 0.08))
+    max_card_width = (available_width - min_gap * (columns - 1)) / columns
+    local_scale = max(0.16, min(0.45, max_card_width / placeholder.width))
+    card_width = max(1, int(placeholder.width * local_scale))
+    card_height = max(1, int(placeholder.height * local_scale))
+    col_gap = max(min_gap, int((available_width - card_width * columns) / 5))
+    start_x = HAND_MARGIN
+    row_gap = max(230, int(card_height * 0.85))
+    total_rows = math.ceil(len(ALL_CATALOG) / columns)
+    catalog_height = total_rows * (card_height + row_gap)
+    index = 0
+    visible_top = HAND_MARGIN + 70
+    visible_bottom = HEIGHT - HAND_MARGIN - 60
+    visible_height = visible_bottom - visible_top
+    min_scroll = min(0, visible_height - catalog_height)
+    deck_creator_state["scroll_y"] = max(min_scroll, min(0, deck_creator_state["scroll_y"]))
+    start_y = HAND_MARGIN + 260 + deck_creator_state["scroll_y"] # adjust
+
+    for card in ALL_CATALOG:
+        col = index % columns
+        row = index // columns
+        card_x = start_x + col * (card_width + col_gap)
+        card_y = start_y + row * (card_height + row_gap)
+        card_rect = pygame.Rect(card_x, card_y, card_width, card_height)
+        if card_rect.bottom < visible_top or card_rect.top > visible_bottom:
+            index += 1
+            continue
+
+        card_dict = card.to_dict()
+        rect = render_image_scaled(card_dict, card_x, card_y + card_height, local_scale)
+        deck_creator_state["rects"]["cards"].append({"rect": rect, "card": card_dict})
+        count = counts.get(card.name, 0)
+
+        menu_y = card_y + card_height + 6
+        minus_rect = pygame.Rect(card_x, menu_y, 18, 18)
+        count_rect = pygame.Rect(card_x + 22, menu_y, 30, 18)
+        plus_rect = pygame.Rect(card_x + 56, menu_y, 18, 18)
+        pygame.draw.rect(screen, (240, 240, 240), minus_rect, 0)
+        pygame.draw.rect(screen, (240, 240, 240), plus_rect, 0)
+        pygame.draw.rect(screen, (30, 30, 30), minus_rect, 1)
+        pygame.draw.rect(screen, (30, 30, 30), plus_rect, 1)
+        minus_text = label_font.render("-", True, (20, 20, 20))
+        plus_text = label_font.render("+", True, (20, 20, 20))
+        screen.blit(minus_text, minus_text.get_rect(center=minus_rect.center))
+        screen.blit(plus_text, plus_text.get_rect(center=plus_rect.center))
+        count_surface = label_font.render(str(count), True, (240, 240, 240))
+        screen.blit(count_surface, count_surface.get_rect(center=count_rect.center))
+
+        deck_creator_state["rects"].setdefault("add", {})[card.name] = plus_rect
+        deck_creator_state["rects"].setdefault("sub", {})[card.name] = minus_rect
+        index += 1
+
+
+def render_deck_select():
+    deck_select_state["rects"] = {}
+    draw_label("Select Decks", HAND_MARGIN, HAND_MARGIN, key="deck_select")
+    back_rect = pygame.Rect(HAND_MARGIN, HAND_MARGIN + 28, 90, 28)
+    draw_button(back_rect, "Back", bg=(235, 235, 235))
+    deck_select_state["rects"]["back"] = back_rect
+
+    decks = load_deck_files()
+    list_x = HAND_MARGIN
+    list_y = HAND_MARGIN + 80
+    line_h = label_font.get_linesize() + 6
+    if not decks:
+        draw_label("No decks found. Create one first.", list_x, list_y, align="left", draw_bg=True)
+    for deck in decks:
+        text = deck["name"]
+        text_width = label_font.size(text)[0] + 12
+        rect = pygame.Rect(list_x, list_y, text_width, line_h)
+        draw_label(text, list_x, list_y, align="left", draw_bg=True)
+        deck_select_state["rects"].setdefault("deck", {})[text] = rect
+        list_y += line_h + 6
+
+    sel = deck_select_state["selected"]
+    draw_label(f"P1: {sel.get('p1') or '-'}", WIDTH - HAND_MARGIN, HAND_MARGIN + 10, align="right", draw_bg=False)
+    draw_label(f"P2: {sel.get('p2') or '-'}", WIDTH - HAND_MARGIN, HAND_MARGIN + 28, align="right", draw_bg=False)
+
+    confirm_rect = pygame.Rect(0, 0, 180, 36)
+    confirm_rect.bottomright = (WIDTH - HAND_MARGIN, HEIGHT - HAND_MARGIN)
+    draw_button(confirm_rect, "Confirm", bg=(235, 235, 235))
+    deck_select_state["rects"]["confirm"] = confirm_rect
+
+    if deck_select_state.get("assign_prompt"):
+        deck_name = deck_select_state["assign_prompt"]
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
+        prompt_rect = pygame.Rect(0, 0, 360, 160)
+        prompt_rect.center = (WIDTH // 2, HEIGHT // 2)
+        pygame.draw.rect(screen, (30, 30, 30), prompt_rect, 0)
+        pygame.draw.rect(screen, (200, 200, 200), prompt_rect, 1)
+        draw_label(f"Assign {deck_name} to:", prompt_rect.centerx, prompt_rect.top + 14, align="center", draw_bg=False)
+        p1_rect = pygame.Rect(0, 0, 130, 32)
+        p1_rect.center = (prompt_rect.centerx - 70, prompt_rect.centery + 20)
+        p2_rect = pygame.Rect(0, 0, 130, 32)
+        p2_rect.center = (prompt_rect.centerx + 70, prompt_rect.centery + 20)
+        cancel_rect = pygame.Rect(0, 0, 100, 26)
+        cancel_rect.center = (prompt_rect.centerx, prompt_rect.bottom - 24)
+        draw_button(p1_rect, "Player 1", bg=(235, 235, 235))
+        draw_button(p2_rect, "Player 2", bg=(235, 235, 235))
+        draw_button(cancel_rect, "Cancel", bg=(220, 220, 220))
+        deck_select_state["rects"]["assign_p1"] = p1_rect
+        deck_select_state["rects"]["assign_p2"] = p2_rect
+        deck_select_state["rects"]["assign_cancel"] = cancel_rect
+
+
+def render_deck_name_prompt():
+    if not deck_name_state.get("active"):
+        return
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 160))
+    screen.blit(overlay, (0, 0))
+    rect = pygame.Rect(0, 0, 420, 150)
+    rect.center = (WIDTH // 2, HEIGHT // 2)
+    pygame.draw.rect(screen, (30, 30, 30), rect, 0)
+    pygame.draw.rect(screen, (200, 200, 200), rect, 1)
+    draw_label("Enter deck name:", rect.centerx, rect.top + 16, align="center", draw_bg=False)
+    input_rect = pygame.Rect(rect.left + 30, rect.centery - 10, rect.width - 60, 30)
+    pygame.draw.rect(screen, (255, 255, 255), input_rect, 0)
+    pygame.draw.rect(screen, (40, 40, 40), input_rect, 1)
+    text = deck_name_state.get("value", "")
+    text_surface = menu_font.render(text, True, (20, 20, 20))
+    screen.blit(text_surface, (input_rect.left + 6, input_rect.top + 6))
+    hint = "Enter to save, Esc to cancel"
+    draw_label(hint, rect.centerx, rect.bottom - 24, align="center", draw_bg=False)
 
 announce_state = {"message": "", "until_ms": 0}
 
@@ -906,12 +1354,10 @@ def activate_pending_discard(state):
 def check_game_over(state):
     if game_over_state.get("active"):
         return True
-    p1_health = state.get(wiz.p1, {}).get("health", 0)
-    p2_health = state.get(wiz.p2, {}).get("health", 0)
-    if p1_health > 0 and p2_health > 0:
+    winner = wiz.game.check_win_condition()
+    if not winner:
         return False
-    loser = wiz.p1 if p1_health <= 0 else wiz.p2
-    winner = wiz.p2 if loser == wiz.p1 else wiz.p1
+    loser = wiz.p1 if winner == wiz.p2 else wiz.p2
     game_over_state.update({"active": True, "winner": winner, "loser": loser})
     add_notification(f"GAME OVER - {winner} wins")
     announce(f"GAME OVER - {winner} wins", duration_ms=9999999)
@@ -926,12 +1372,14 @@ def clear_pending_discard():
 
 
 def detect_creature_stat_changes(game_state):
-    global prev_creature_stats, prev_creature_status
+    global prev_creature_stats, prev_creature_status, last_creature_rects, prev_creature_order
     current = {}
     current_status = {}
     changed = False
+    current_order = {}
     for player in (wiz.p1, wiz.p2):
         creatures = game_state.get(player, {}).get("creatures", {})
+        current_order[player] = [str(cid) for cid in creatures.keys()]
         for cid, cdata in creatures.items():
             card = cdata.get("card", {})
             attack = card.get("attack")
@@ -977,8 +1425,41 @@ def detect_creature_stat_changes(game_state):
                 card_dict = game_state[player]["creatures"][cid]["card"]
                 hover_label_state["lines"] = build_hover_label_lines(card_dict)
 
+    # Detect creature deaths and spawn explosions at last known rects
+    for key in prev_creature_stats.keys():
+        if key in current:
+            continue
+        owner, cid = key
+        rect = None
+        layout = last_layout_metrics or {}
+        card_width = layout.get("card_width")
+        card_height = layout.get("card_height")
+        top_y = layout.get("top_creatures_y")
+        middle_y = layout.get("middle_creatures_y")
+        card_step = layout.get("card_step")
+        if card_width and card_height and top_y and middle_y and card_step:
+            prev_order = prev_creature_order.get(owner, [])
+            if cid in prev_order:
+                index = prev_order.index(cid)
+                count = len(prev_order)
+                if owner == view_player:
+                    total_width = (card_width * count) + CARD_SPACING * (count - 1)
+                    x_start = HAND_MARGIN
+                    x = x_start + index * (card_width + CARD_SPACING)
+                    rect = pygame.Rect(x, middle_y - card_height, card_width, card_height)
+                else:
+                    total_width = card_width + card_step * (count - 1)
+                    x_start = max(HAND_MARGIN, (WIDTH - total_width) // 2)
+                    x = x_start + index * card_step
+                    rect = pygame.Rect(x, top_y - card_height, card_width, card_height)
+        if rect is None:
+            rect = last_creature_rects.get(key)
+        if rect:
+            queue_explosion(rect)
+
     prev_creature_stats = current
     prev_creature_status = current_status
+    prev_creature_order = current_order
     if changed:
         wiz.game._save_state(game_state)
 
@@ -1530,7 +2011,7 @@ def confirm_blockers(game_state):
 
 def render_battlefield(game_state, player):
     global land_hitboxes, creature_hitboxes, label_rects, label_draw_queue, active_creature_hitboxes
-    global creature_rects, active_creature_rects
+    global creature_rects, active_creature_rects, last_creature_rects, last_layout_metrics
     land_hitboxes = []
     creature_hitboxes = []
     active_creature_hitboxes = []
@@ -1542,9 +2023,11 @@ def render_battlefield(game_state, player):
     enemy = wiz.p2 if player == wiz.p1 else wiz.p1
     placeholder = load_pil_image(PLACEHOLDER_PATH)
     card_height = max(1, int(placeholder.height * CARD_SCALE))
+    card_width = max(1, int(placeholder.width * CARD_SCALE))
     row_gap = max(12, int(card_height * 0.2))
     label_height = label_font.get_linesize()
     label_gap = max(6, int(card_height * 0.1))
+    card_step = max(18, int(card_width * 0.4))
 
     def queue_zone_label(text, x, y, align="left", key=None, draw_bg=True):
         label_draw_queue.append((text, x, y, align, key, draw_bg))
@@ -1567,7 +2050,7 @@ def render_battlefield(game_state, player):
     middle_label_y = (top_creatures_y + bottom_label_y) // 2
     middle_label_y = max(min_middle_label_y, middle_label_y)
     middle_label_y = min(middle_label_y, max_middle_label_y if max_middle_label_y > min_middle_label_y else min_middle_label_y)
-    middle_creatures_y = middle_label_y + label_height + label_gap + card_height
+    middle_creatures_y = middle_label_y + label_height + label_gap
 
     bottom_hand_y = bottom_row_y
     bottom_lands_y = bottom_row_y
@@ -1597,7 +2080,7 @@ def render_battlefield(game_state, player):
             alert_ids=enemy_ready_ids,
         )
 
-    creatures_label_y = middle_creatures_y - label_height - label_gap
+    creatures_label_y = middle_label_y
     queue_zone_label("Creatures", HAND_MARGIN, creatures_label_y, align="left", key="creatures")
     render_creature_row(
         game_state,
@@ -1624,7 +2107,9 @@ def render_battlefield(game_state, player):
         queue_zone_label(text, mana_x, mana_label_y, align="left", key=f"mana_{text.lower()}", draw_bg=False)
         mana_x += width + mana_gap
 
-    queue_zone_label("Hand", HAND_MARGIN, hand_label_y, align="left", key="hand")
+    hand_count = len(game_state[player].get("hand", {}))
+    deck_count = len(game_state[player].get("deck", []))
+    queue_zone_label(f"Hand: {hand_count} | Deck: {deck_count}", HAND_MARGIN, hand_label_y, align="left", key="hand")
     lands_x = WIDTH // 2
     queue_zone_label("Lands", lands_x, lands_label_y, align="center", key="lands")
     tap_all_x = lands_x + label_font.size("Lands")[0] // 2 + 14
@@ -1658,6 +2143,21 @@ def render_battlefield(game_state, player):
         align="right",
         key="end_turn",
     )
+
+    # Store last known creature rects for death animations
+    for cid, rect in creature_rects.items():
+        last_creature_rects[(player, str(cid))] = rect
+    for cid, rect in active_creature_rects.items():
+        last_creature_rects[(enemy, str(cid))] = rect
+
+    last_layout_metrics = {
+        "view_player": player,
+        "card_width": card_width,
+        "card_height": card_height,
+        "top_creatures_y": top_creatures_y,
+        "middle_creatures_y": middle_creatures_y,
+        "card_step": card_step,
+    }
 
     render_land_row(game_state, player, bottom_lands_y, align="center")
     render_graveyard_row(game_state, player, bottom_creatures_y, align="right")
@@ -2282,25 +2782,90 @@ def on_mouse_hover(game_state, player):
         hover_label_state["visible"] = False
     return hovered_card_id
 
+
+def on_mouse_hover_deck_creator():
+    global hovered_card_id, hover_state, hover_label_state
+    mouse_pos = pygame.mouse.get_pos()
+    hovered_card_id = None
+    hover_hit = None
+    for hit in reversed(deck_creator_state.get("rects", {}).get("cards", [])):
+        if hit["rect"].collidepoint(mouse_pos):
+            hover_hit = hit
+            break
+    if hover_hit:
+        hovered_card_id = hover_hit["card"].get("name")
+        now = pygame.time.get_ticks()
+        if hover_state.get("card_id") != hovered_card_id:
+            hover_state = {
+                "card_id": hovered_card_id,
+                "start_ms": now,
+                "card": hover_hit.get("card"),
+                "rect": hover_hit.get("rect"),
+            }
+            hover_label_state["visible"] = False
+        else:
+            hover_state["rect"] = hover_hit.get("rect")
+            hover_state["card"] = hover_hit.get("card")
+            if not hover_label_state.get("visible") and now - hover_state.get("start_ms", 0) >= 1500:
+                card_dict = hover_state.get("card") or {}
+                hover_label_state["lines"] = build_hover_label_lines(card_dict)
+                hover_label_state["anchor_rect"] = hover_state.get("rect")
+                hover_label_state["visible"] = True
+            elif hover_label_state.get("visible"):
+                hover_label_state["anchor_rect"] = hover_state.get("rect")
+    else:
+        hover_state = {"card_id": None, "start_ms": 0, "card": None, "rect": None}
+        hover_label_state["visible"] = False
+    return hovered_card_id
+
 # Move the card upwards when clicked to signify it's selected
 # Drop the card when released to signify it's not selected
 def on_mouse_click(game_state, player):
     global selected_card_id
     return selected_card_id
 
-wiz = Wizard("Player 1", "Player 2")
-wiz.start()
-view_player = wiz.current_player()
+wiz = None
+view_player = None
+
+
+def start_game(deck1, deck2):
+    global wiz, view_player, selected_card_id, active_selected_card_id, selected_blocker_id
+    global prev_creature_stats, prev_creature_status, prev_hand_ids, last_drawn_id
+    global draw_animation, popup_shown
+    wiz = Wizard("Player 1", "Player 2", deck1=deck1, deck2=deck2)
+    wiz.start()
+    view_player = wiz.current_player()
+    selected_card_id = None
+    active_selected_card_id = None
+    selected_blocker_id = None
+    prev_creature_stats = {}
+    prev_creature_status = {}
+    prev_hand_ids = {}
+    last_drawn_id = {}
+    draw_animation.update(
+        {
+            "active": False,
+            "card_id": None,
+            "card": None,
+            "start": None,
+            "end": None,
+            "start_ms": 0,
+            "player": None,
+            "queue": [],
+        }
+    )
+    popup_shown = False
 
 running = True
 while running:
-    state = wiz.game.get_game_state()
-    view_player = wiz.priority_player or wiz.current_player()
-    detect_creature_stat_changes(state)
-    detect_draw_animation(state, view_player)
-    activate_pending_discard(state)
-    check_game_over(state)
-    update_image_paths(state)
+    state = None
+    if ui_mode == "game" and wiz is not None:
+        state = wiz.game.get_game_state()
+        view_player = wiz.priority_player or wiz.current_player()
+        detect_draw_animation(state, view_player)
+        activate_pending_discard(state)
+        check_game_over(state)
+        update_image_paths(state)
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -2308,46 +2873,172 @@ while running:
         elif event.type == pygame.VIDEORESIZE:
             WIDTH, HEIGHT = event.w, event.h
             screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+            update_ui_scale()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if not game_over_state.get("active"):
-                handle_left_click(state, view_player, event.pos)
+            if popup_state.get("visible"):
+                close_rect = popup_state.get("close_rect")
+                popup_rect = popup_state.get("rect")
+                if close_rect and close_rect.collidepoint(event.pos):
+                    popup_state["visible"] = False
+                    continue
+                if popup_rect and popup_rect.collidepoint(event.pos):
+                    continue
+            if ui_mode == "game":
+                if not game_over_state.get("active"):
+                    handle_left_click(state, view_player, event.pos)
+            elif ui_mode == "menu":
+                for key, rect in menu_buttons.items():
+                    if rect.collidepoint(event.pos):
+                        if key == "play":
+                            if not load_deck_files():
+                                counts = generate_random_deck_counts()
+                                save_deck_file("random_deck", counts)
+                            deck_select_state["selected"] = {"p1": None, "p2": None}
+                            deck_select_state["assign_prompt"] = None
+                            ui_mode = "deck_select"
+                        elif key == "deck":
+                            deck_creator_state["counts"] = {}
+                            deck_creator_state["scroll_y"] = 0
+                            ui_mode = "deck_creator"
+                        break
+            elif ui_mode == "deck_creator":
+                if deck_name_state.get("active"):
+                    continue
+                rects = deck_creator_state.get("rects", {})
+                if rects.get("back") and rects["back"].collidepoint(event.pos):
+                    ui_mode = "menu"
+                elif rects.get("confirm") and rects["confirm"].collidepoint(event.pos):
+                    totals = get_deck_totals(deck_creator_state["counts"])
+                    if totals["Land"] < 20 or totals["Creature"] < 20 or totals["Spell"] < 8:
+                        popup("Deck must include at least 20 lands, 20 creatures, and 8 spells.")
+                    elif totals["Total"] > 60:
+                        popup("Deck cannot exceed 60 cards.")
+                    else:
+                        deck_name_state.update({"active": True, "value": ""})
+                else:
+                    for name, rect in rects.get("add", {}).items():
+                        if rect.collidepoint(event.pos):
+                            current = deck_creator_state["counts"].get(name, 0)
+                            if current < 4:
+                                totals = get_deck_totals(deck_creator_state["counts"])
+                                if totals["Total"] < 60:
+                                    deck_creator_state["counts"][name] = current + 1
+                            break
+                    for name, rect in rects.get("sub", {}).items():
+                        if rect.collidepoint(event.pos):
+                            current = deck_creator_state["counts"].get(name, 0)
+                            if current > 0:
+                                deck_creator_state["counts"][name] = current - 1
+                                if deck_creator_state["counts"][name] <= 0:
+                                    del deck_creator_state["counts"][name]
+                            break
+            elif ui_mode == "deck_select":
+                rects = deck_select_state.get("rects", {})
+                if rects.get("back") and rects["back"].collidepoint(event.pos):
+                    ui_mode = "menu"
+                elif rects.get("confirm") and rects["confirm"].collidepoint(event.pos):
+                    sel = deck_select_state["selected"]
+                    if not sel.get("p1") or not sel.get("p2"):
+                        popup("Select decks for both players before confirming.")
+                    else:
+                        deck_files = {d["name"]: d for d in load_deck_files()}
+                        p1_path = deck_files[sel["p1"]]["path"]
+                        p2_path = deck_files[sel["p2"]]["path"]
+                        deck1 = build_deck_from_counts(load_deck_counts(p1_path))
+                        deck2 = build_deck_from_counts(load_deck_counts(p2_path))
+                        start_game(deck1, deck2)
+                        ui_mode = "game"
+                elif deck_select_state.get("assign_prompt"):
+                    if rects.get("assign_p1") and rects["assign_p1"].collidepoint(event.pos):
+                        deck_select_state["selected"]["p1"] = deck_select_state["assign_prompt"]
+                        deck_select_state["assign_prompt"] = None
+                    elif rects.get("assign_p2") and rects["assign_p2"].collidepoint(event.pos):
+                        deck_select_state["selected"]["p2"] = deck_select_state["assign_prompt"]
+                        deck_select_state["assign_prompt"] = None
+                    elif rects.get("assign_cancel") and rects["assign_cancel"].collidepoint(event.pos):
+                        deck_select_state["assign_prompt"] = None
+                else:
+                    for name, rect in rects.get("deck", {}).items():
+                        if rect.collidepoint(event.pos):
+                            deck_select_state["assign_prompt"] = name
+                            break
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-            if not game_over_state.get("active"):
+            if ui_mode == "game" and not game_over_state.get("active"):
                 handle_right_click(state, view_player, event.pos)
+        elif event.type == pygame.MOUSEWHEEL:
+            if ui_mode == "deck_creator":
+                deck_creator_state["scroll_y"] += event.y * 30
+        elif event.type == pygame.KEYDOWN:
+            if deck_name_state.get("active"):
+                if event.key == pygame.K_ESCAPE:
+                    deck_name_state.update({"active": False, "value": ""})
+                elif event.key == pygame.K_BACKSPACE:
+                    deck_name_state["value"] = deck_name_state.get("value", "")[:-1]
+                elif event.key == pygame.K_RETURN:
+                    deck_name = sanitize_deck_name(deck_name_state.get("value"))
+                    if not deck_name:
+                        popup("Deck name must be at least 1 character.")
+                    else:
+                        save_deck_file(deck_name, deck_creator_state["counts"])
+                        deck_name_state.update({"active": False, "value": ""})
+                        ui_mode = "menu"
+                        popup(f"Deck saved: {deck_name}")
+                else:
+                    if event.unicode and len(deck_name_state.get("value", "")) < 20:
+                        deck_name_state["value"] += event.unicode
+
+    if ui_mode == "game" and wiz is not None and state is None:
+        state = wiz.game.get_game_state()
+        view_player = wiz.priority_player or wiz.current_player()
 
     screen.fill(BACKGROUND_COLOR)
-    on_mouse_hover(state, view_player)
-    render_battlefield(state, view_player)
-    _, _, _, _, hand_start_x = get_deck_layout()
-    exclude_ids = []
-    if draw_animation.get("active") and draw_animation.get("player") == view_player:
-        exclude_ids = [draw_animation.get("card_id")]
-    render_hand(state, view_player, start_x=hand_start_x, exclude_ids=exclude_ids)
-    render_draw_animation()
-    render_combat_lines(state)
-    render_zone_labels()
-    render_notifications()
-    render_popup()
-    render_context_menu()
-    render_hover_label()
-    render_combat_prompt()
-    render_announce()
-    if not popup_shown:
-        popup("Welcome to Wizard!\n1. Click on a card to select it and click on the labels to move it around.\n2. You can only play one land per turn."
-        "\n3. Right click on a land to tap it.\n4. Right click on a creature to attack.\n5. Click on spells to target creatures or players.")
-        popup_shown = True
-    if selected_card_id:
-        current_hand = state.get(view_player, {}).get("hand", {})
-        selected_card = current_hand.get(str(selected_card_id))
-        draw_line = False
-        if selected_card:
-            if selected_card.get("type") == "Spell":
-                targeting = get_spell_targeting(selected_card)
-                draw_line = targeting.get("needs_creature")
-        if draw_line:
-            anchor = get_selected_anchor()
-            if anchor:
-                pygame.draw.line(screen, (255, 255, 255), anchor, pygame.mouse.get_pos(), 2)
+    if ui_mode == "menu":
+        render_main_menu()
+        render_popup()
+    elif ui_mode == "deck_creator":
+        on_mouse_hover_deck_creator()
+        render_deck_creator()
+        render_hover_label()
+        render_deck_name_prompt()
+        render_popup()
+    elif ui_mode == "deck_select":
+        render_deck_select()
+        render_popup()
+    elif ui_mode == "game" and wiz is not None:
+        on_mouse_hover(state, view_player)
+        render_battlefield(state, view_player)
+        detect_creature_stat_changes(state)
+        render_explosions()
+        _, _, _, _, hand_start_x = get_deck_layout()
+        exclude_ids = []
+        if draw_animation.get("active") and draw_animation.get("player") == view_player:
+            exclude_ids = [draw_animation.get("card_id")]
+        render_hand(state, view_player, start_x=hand_start_x, exclude_ids=exclude_ids)
+        render_draw_animation()
+        render_combat_lines(state)
+        render_zone_labels()
+        render_notifications()
+        render_popup()
+        render_context_menu()
+        render_hover_label()
+        render_combat_prompt()
+        render_announce()
+        if not popup_shown:
+            # popup("Welcome to Wizard!\n1. Click on a card to select it and click on the labels to move it around.\n2. You can only play one land per turn."
+            # "\n3. Right click on a land to tap it.\n4. Right click on a creature to attack.\n5. Click on spells to target creatures or players.")
+            popup_shown = True
+        if selected_card_id:
+            current_hand = state.get(view_player, {}).get("hand", {})
+            selected_card = current_hand.get(str(selected_card_id))
+            draw_line = False
+            if selected_card:
+                if selected_card.get("type") == "Spell":
+                    targeting = get_spell_targeting(selected_card)
+                    draw_line = targeting.get("needs_creature")
+            if draw_line:
+                anchor = get_selected_anchor()
+                if anchor:
+                    pygame.draw.line(screen, (255, 255, 255), anchor, pygame.mouse.get_pos(), 2)
     pygame.display.flip()
 
 pygame.quit()

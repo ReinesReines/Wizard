@@ -10,48 +10,52 @@ from card_index import (
     # Creatures
     slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf,
     skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar, vergil,
-    goblin_raider, fire_elemental, dragon_whelp, berserker,
+    goblin_raider, fire_elemental, dragon_whelp, berserker, imp, sazael_the_great, red_wizar,
+    blue_wizar, green_wizar, stone_giant, king_slime, archer, 
     # Lands
-    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands,
+    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, snake_pit, machine_factory, sea_of_stars, land_of_iridesence,
     # Spells
-    fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration
+    fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration, magic_missile,
 )
 from modules.utils import *
 
 class Wizard:
-    def __init__(self, p1, p2):
+    def __init__(self, p1, p2, deck1=None, deck2=None):
         self.p1 = p1
         self.p2 = p2
-        creature_pool = [
-            slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf,
-            skeleton, phantom_warrior, arcane_scholar, goblin_raider, 
-            fire_elemental, dragon_whelp, berserker, skeleton_army, sea_serpent
-        ]
-        
-        land_pool = [
-            forest, forest, forest, island, island, island,
-            mountain, mountain, tropical_grove, volcanic_peak, wild_highlands
-        ]
+        if deck1 is None or deck2 is None:
+            creature_pool = [
+                slime, bigger_slime, forest_bear, vine_elemental, alpha_wolf,
+                skeleton, phantom_warrior, arcane_scholar, goblin_raider, 
+                fire_elemental, dragon_whelp, berserker, skeleton_army, sea_serpent, imp, sazael_the_great, red_wizar,
+                blue_wizar, green_wizar, stone_giant, king_slime, archer, vergil,
+            ]
+            
+            land_pool = [
+                forest, forest, forest, island, island, island,
+                mountain, mountain, tropical_grove, volcanic_peak, wild_highlands,
+                snake_pit, machine_factory, sea_of_stars, land_of_iridesence,
+            ]
 
-        spell_pool = [
-            fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration
-        ]
+            spell_pool = [
+                fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast,
+                wrath, rot, bless, wingify, scorched_earth, inspiration, magic_missile,
+            ]
 
-        import copy
-        
-        # Create separate deck copies for each player to avoid ID conflicts
-        deck1_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(28)]
-        deck1_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
-        deck1_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(16)]
-        deck1 = deck1_lands + deck1_creatures + deck1_spells
-        random.shuffle(deck1)
-        
-        deck2 = copy.deepcopy(creature_pool) + copy.deepcopy(creature_pool) + copy.deepcopy(land_pool)
-        deck2_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(28)]
-        deck2_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
-        deck2_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(16)]
-        deck2 = deck2_lands + deck2_creatures + deck2_spells
-        random.shuffle(deck2)
+            import copy
+            
+            # Create separate deck copies for each player to avoid ID conflicts
+            deck1_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(28)]
+            deck1_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
+            deck1_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(16)]
+            deck1 = deck1_lands + deck1_creatures + deck1_spells
+            random.shuffle(deck1)
+            
+            deck2_lands = [copy.deepcopy(random.choice(land_pool)) for _ in range(28)]
+            deck2_creatures = [copy.deepcopy(random.choice(creature_pool)) for _ in range(24)]
+            deck2_spells = [copy.deepcopy(random.choice(spell_pool)) for _ in range(16)]
+            deck2 = deck2_lands + deck2_creatures + deck2_spells
+            random.shuffle(deck2)
 
         self.game = GameEngine(p1, p2, deck1, deck2)
         self.game.current_turn_drawn = False

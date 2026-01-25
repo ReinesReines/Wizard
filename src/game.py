@@ -55,6 +55,15 @@ class GameEngine:
         """Save the game state to JSON."""
         with open(self.game_file, "w") as f:
             json.dump(game_state, f, indent=4)
+
+    def _clamp_attack(self, card_dict, creature_data=None):
+        if not isinstance(card_dict, dict):
+            return
+        if "attack" in card_dict and card_dict["attack"] is not None:
+            card_dict["attack"] = max(0, card_dict["attack"])
+        if creature_data and isinstance(creature_data, dict):
+            if creature_data.get("base_attack") is not None:
+                creature_data["base_attack"] = max(0, creature_data["base_attack"])
     
     def count(self, target: Cards, deck):
         """Counts the number of target cards in a given deck."""
@@ -353,6 +362,14 @@ class GameEngine:
             value = effect.get("value", 1)
             if value is None:
                 value = 1
+            if isinstance(value, tuple):
+                try:
+                    from .modules.utils import _resolve_expression
+                except:
+                    from modules.utils import _resolve_expression
+                value = _resolve_expression(value, game_state, player)
+                if value is None:
+                    value = 0
 
             # Determine target kind if target is provided and target_type allows both
             target_kind = None
@@ -365,6 +382,9 @@ class GameEngine:
                 field_mapping = {"att": "attack", "end": "defence"}
                 card_field = field_mapping.get(effect.get("field"), effect.get("field"))
                 delta = value if action == "inc" else -value
+                name_filter = effect.get("name")
+                if isinstance(name_filter, str):
+                    name_filter = name_filter.strip().lower()
 
                 if effect.get("all"):
                     for owner, cid, cdata in iter_active_creatures([self.player1, self.player2]):
@@ -373,6 +393,7 @@ class GameEngine:
                             card[card_field] += delta
                             if card_field == "attack":
                                 cdata["base_attack"] = cdata.get("base_attack", card[card_field]) + delta
+                                self._clamp_attack(card, cdata)
                             elif card_field == "defence":
                                 cdata["base_defence"] = cdata.get("base_defence", card[card_field]) + delta
                     self._info(f"All creatures {card_field} {'+' if delta>=0 else ''}{delta}.")
@@ -381,7 +402,26 @@ class GameEngine:
                     for owner, cid, card in iter_hand_creatures(player):
                         if card_field in card:
                             card[card_field] += delta
+                            if card_field == "attack":
+                                self._clamp_attack(card)
                     self._info(f"Hand creatures {card_field} {'+' if delta>=0 else ''}{delta}.")
+                elif name_filter:
+                    matched = 0
+                    for owner, cid, cdata in iter_active_creatures([player]):
+                        card = cdata["card"]
+                        card_name = str(card.get("name", "")).lower()
+                        if card_name == name_filter and card_field in card:
+                            card[card_field] += delta
+                            if card_field == "attack":
+                                cdata["base_attack"] = cdata.get("base_attack", card[card_field]) + delta
+                                self._clamp_attack(card, cdata)
+                            elif card_field == "defence":
+                                cdata["base_defence"] = cdata.get("base_defence", card[card_field]) + delta
+                            matched += 1
+                    if matched == 0:
+                        self._error(f"No active creatures named '{effect.get('name')}'.")
+                        return False
+                    self._info(f"{effect.get('name')} {card_field} {'+' if delta>=0 else ''}{delta}.")
                 else:
                     if effect.get("creatureid") or target_type == "creature" or target_kind == "creature":
                         owner, creature_data = self._resolve_spell_target_creature(game_state, target)
@@ -393,6 +433,7 @@ class GameEngine:
                             creature_card[card_field] += delta
                             if card_field == "attack":
                                 creature_data["base_attack"] = creature_data.get("base_attack", creature_card[card_field]) + delta
+                                self._clamp_attack(creature_card, creature_data)
                             elif card_field == "defence":
                                 creature_data["base_defence"] = creature_data.get("base_defence", creature_card[card_field]) + delta
                             self._info(f"{creature_card['name']} {card_field} {'+' if delta>=0 else ''}{delta}.")
@@ -412,6 +453,7 @@ class GameEngine:
                 creature_card[card_field] += delta
                 if card_field == "attack":
                     creature_data["base_attack"] = creature_data.get("base_attack", creature_card[card_field]) + delta
+                    self._clamp_attack(creature_card, creature_data)
                 elif card_field == "defence":
                     creature_data["base_defence"] = creature_data.get("base_defence", creature_card[card_field]) + delta
                 self._info(f"{creature_card['name']} {card_field} {'+' if delta>=0 else ''}{delta}.")
@@ -637,6 +679,9 @@ class GameEngine:
         # Check if deck is empty
         if not player_data["deck"]:
             self._warn(f"{player} cannot draw: deck is empty.")
+            opponent = self.player2 if player == self.player1 else self.player1
+            self._warn(f"Game over: {player} tried to draw from an empty deck.")
+            self._info(f"{opponent} wins.")
             return False
         
         # Draw top card
@@ -847,26 +892,36 @@ class GameEngine:
         
         # Parse effect to generate mana
         effect = land_data["card"].get("effect", "")
-        
-        # Simple parsing for "tap? gen [color]"
-        if "gen" in effect:
-            colors = []
-            if "green" in effect:
-                colors.append("green")
-            if "blue" in effect:
-                colors.append("blue")
-            if "red" in effect:
-                colors.append("red")
-            
-            # Use color_choice if provided, otherwise use first color
+        try:
+            from .modules.parser import EffectParser
+        except:
+            from modules.parser import EffectParser
+        try:
+            from .modules.utils import _resolve_expression
+        except:
+            from modules.utils import _resolve_expression
+
+        parser = EffectParser()
+        effects = parser.parse(effect)
+        gen_effect = next((e for e in effects if e.get("action") == "gen" and e.get("trigger") == "tap?"), None)
+        if not gen_effect:
+            gen_effect = next((e for e in effects if e.get("action") == "gen"), None)
+
+        if gen_effect:
+            colors = gen_effect.get("value") or []
+            amount = gen_effect.get("amount") or 1
+            if isinstance(amount, tuple):
+                amount = _resolve_expression(amount, game_state, player)
+            if amount is None:
+                amount = 1
             if colors:
                 if color_choice and color_choice in colors:
                     color = color_choice
                 else:
                     color = colors[0]
-                player_data[f"{color}_mana"] += 1
+                player_data[f"{color}_mana"] += amount
                 self._info(
-                    f"{player} taps {land_data['card']['name']} for {color}. "
+                    f"{player} taps {land_data['card']['name']} for {amount} {color}. "
                     f"{color}_mana: {player_data[f'{color}_mana']}"
                 )
         
@@ -1437,7 +1492,7 @@ class GameEngine:
 
     def check_win_condition(self):
         """
-        Check if any player has won (health ≤ 0 or empty deck).
+        Check if any player has won (health ≤ 0, empty deck on draw, or no cards).
         Returns winner name or None.
         """
         game_state = self._load_state()
@@ -1447,18 +1502,27 @@ class GameEngine:
                 continue
                 
             player_data = game_state[player]
+            opponent = self.player2 if player == self.player1 else self.player1
             
             # Check health
             if player_data["health"] <= 0:
-                opponent = self.player2 if player == self.player1 else self.player1
                 self._warn(f"Game over: {player} reduced to {player_data['health']} health.")
                 self._info(f"{opponent} wins.")
                 return opponent
                 
             # Check empty deck (try to draw when deck is empty = lose)  
             if len(player_data["deck"]) == 0:
-                opponent = self.player2 if player == self.player1 else self.player1
                 self._warn(f"Game over: {player} tried to draw from an empty deck.")
+                self._info(f"{opponent} wins.")
+                return opponent
+
+            # Check no cards remaining anywhere
+            if (
+                len(player_data.get("deck", [])) == 0
+                and len(player_data.get("hand", {})) == 0
+                and len(player_data.get("creatures", {})) == 0
+            ):
+                self._warn(f"Game over: {player} has no cards left in deck, hand, or creatures.")
                 self._info(f"{opponent} wins.")
                 return opponent
         
@@ -1694,7 +1758,8 @@ class GameEngine:
         parsed_effects = parser.parse(effect_string)
         
         # Find and execute the matching trigger
-        permanent_enter_buff = trigger_type in ("enter?", "enter") and creature_card.get("name") == "Vine Elemental"
+        is_temporary = trigger_type in ("attack?", "block?", "attack", "block")
+        should_persist = not is_temporary
 
         for effect in parsed_effects:
             trigger_without_question = trigger_type.replace("?", "")
@@ -1708,6 +1773,14 @@ class GameEngine:
                 if effect["action"] in ("inc", "dec"):
                     field = effect["field"]
                     value = effect["value"]
+                    if isinstance(value, tuple):
+                        try:
+                            from .modules.utils import _resolve_expression
+                        except:
+                            from modules.utils import _resolve_expression
+                        value = _resolve_expression(value, game_state, player)
+                        if value is None:
+                            value = 0
                     sign = 1 if effect["action"] == "inc" else -1
                     
                     # Map parser field names to card field names
@@ -1722,10 +1795,12 @@ class GameEngine:
                                     continue
                                 delta = sign * value
                                 target_card[card_field] += delta
-                                if card_field == "attack":
-                                    cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
-                                elif card_field == "defence":
-                                    cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
+                                if should_persist:
+                                    if card_field == "attack":
+                                        cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
+                                        self._clamp_attack(target_card, cdata)
+                                    elif card_field == "defence":
+                                        cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
                         self._info(f"All creatures {card_field} {'+' if sign*value>=0 else ''}{sign*value}.")
                     elif effect.get("global"):
                         delta = sign * value
@@ -1734,19 +1809,22 @@ class GameEngine:
                             if card_field not in target_card:
                                 continue
                             target_card[card_field] += delta
-                            if card_field == "attack":
-                                cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
-                            elif card_field == "defence":
-                                cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
+                            if should_persist:
+                                if card_field == "attack":
+                                    cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + delta
+                                    self._clamp_attack(target_card, cdata)
+                                elif card_field == "defence":
+                                    cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + delta
                         self._info(f"{player}'s creatures {card_field} {'+' if delta>=0 else ''}{delta}.")
                     else:
                         if card_field in creature_card:
                             old_value = creature_card[card_field]
                             delta = sign * value
                             creature_card[card_field] += delta
-                            if permanent_enter_buff:
+                            if should_persist:
                                 if card_field == "attack":
                                     creature_data["base_attack"] = creature_data.get("base_attack", creature_card[card_field]) + delta
+                                    self._clamp_attack(creature_card, creature_data)
                                 elif card_field == "defence":
                                     creature_data["base_defence"] = creature_data.get("base_defence", creature_card[card_field]) + delta
                             new_value = creature_card[card_field]
@@ -1831,20 +1909,33 @@ class GameEngine:
                                 target_card = cdata["card"]
                                 if card_field in target_card:
                                     target_card[card_field] += value
+                                    if should_persist:
+                                        if card_field == "attack":
+                                            cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + value
+                                            self._clamp_attack(target_card, cdata)
+                                        elif card_field == "defence":
+                                            cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + value
                         self._info(f"All creatures {card_field} +{value}.")
                     elif effect.get("global"):
                         for cid, cdata in game_state[player]["creatures"].items():
                             target_card = cdata["card"]
                             if card_field in target_card:
                                 target_card[card_field] += value
+                                if should_persist:
+                                    if card_field == "attack":
+                                        cdata["base_attack"] = cdata.get("base_attack", target_card[card_field]) + value
+                                        self._clamp_attack(target_card, cdata)
+                                    elif card_field == "defence":
+                                        cdata["base_defence"] = cdata.get("base_defence", target_card[card_field]) + value
                         self._info(f"{player}'s creatures {card_field} +{value}.")
                     else:
                         if card_field in creature_card:
                             old_value = creature_card[card_field]
                             creature_card[card_field] += value
-                            if permanent_enter_buff:
+                            if should_persist:
                                 if card_field == "attack":
                                     creature_data["base_attack"] = creature_data.get("base_attack", creature_card[card_field]) + value
+                                    self._clamp_attack(creature_card, creature_data)
                                 elif card_field == "defence":
                                     creature_data["base_defence"] = creature_data.get("base_defence", creature_card[card_field]) + value
                             new_value = creature_card[card_field]

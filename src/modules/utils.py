@@ -96,13 +96,14 @@ def is_dual_land(land_effect):
     return "/" in land_effect
 
 def get_land_colors(land_effect):
-    if "gen" in land_effect:
-        colors_part = land_effect.split("gen ")[-1]
-
-        colors = colors_part.split("/")
-        return [color.strip() for color in colors]
-    
-    return []
+    if not land_effect:
+        return []
+    instructions = effect_parser.parse(land_effect)
+    colors = []
+    for inst in instructions:
+        if inst.get('action') == 'gen':
+            colors.extend(inst.get('value', []))
+    return list(set(colors))
 
 # ====================
 # EXECUTION ENGINE
@@ -157,14 +158,32 @@ def _resolve_expression(expr, game_state, player=None):
     if not isinstance(expr, tuple) or len(expr) == 0:
         return 0
     
-    if len(expr) >= 3 and expr[0] in ['graveyard', 'deck']:
+    if len(expr) >= 3 and expr[1] == 'count' and game_state and player and player in game_state:
         place = expr[0]
-        operation = expr[1]
-        card_name = expr[2]
-        
-        if operation == 'count' and game_state and player and player in game_state:
-            cards_in_place = game_state[player][place]
-            count = sum(1 for c in cards_in_place if isinstance(c, dict) and c.get('name') == card_name)
+        subject = expr[2]
+        if isinstance(subject, str):
+            subject = subject.strip('"').strip("'")
+
+        player_data = game_state[player]
+
+        if place == 'mana':
+            if not isinstance(subject, str) or not subject:
+                return 0
+            color = subject.lower()
+            return player_data.get(f"{color}_mana", 0)
+
+        if place in ['graveyard', 'deck', 'hand']:
+            cards_in_place = player_data.get(place, [])
+            if isinstance(cards_in_place, dict):
+                cards_iter = cards_in_place.values()
+            else:
+                cards_iter = cards_in_place
+            count = 0
+            for card in cards_iter:
+                if isinstance(card, dict) and card.get('name') == subject:
+                    count += 1
+                elif hasattr(card, 'name') and card.name == subject:
+                    count += 1
             return count
     
     return 0

@@ -1,0 +1,26 @@
+{
+  "name": "starter_deck",
+  "cards": {
+    "Forest": 4,
+    "Island": 4,
+    "Mountain": 4,
+    "Tropical Grove": 2,
+    "Snake Pit": 2,
+    "Wild Highlands": 4,
+    "Volcanic Peak": 2,
+    "Machine Factory": 2,
+    "Slime": 4,
+    "Bigger Slime": 4,
+    "Forest Bear": 2,
+    "Stone Giant": 2,
+    "Archer": 2,
+    "Skeleton": 4,
+    "Imp": 2,
+    "Goblin Raider": 2,
+    "Dragon Whelp": 2,
+    "Oath": 2,
+    "Fireball": 4,
+    "Healing Word": 4,
+    "Wingify": 2
+  }
+}
