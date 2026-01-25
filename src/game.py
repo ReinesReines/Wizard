@@ -1234,6 +1234,7 @@ class GameEngine:
                         damage_queue.append({
                             "source": "creature",
                             "source_id": attacker_id,
+                            "source_player": current_player,
                             "target": "creature",
                             "target_id": blocker_id,
                             "target_player": opponent,
@@ -1245,6 +1246,7 @@ class GameEngine:
                             damage_queue.append({
                                 "source": "creature",
                                 "source_id": attacker_id,
+                                "source_player": current_player,
                                 "target": "player",
                                 "target_player": opponent,
                                 "damage": trample_damage
@@ -1260,6 +1262,7 @@ class GameEngine:
                         damage_queue.append({
                             "source": "creature",
                             "source_id": attacker_id,
+                            "source_player": current_player,
                             "target": "creature",
                             "target_id": blocker_id,
                             "target_player": opponent,
@@ -1271,6 +1274,7 @@ class GameEngine:
                     damage_queue.append({
                         "source": "creature", 
                         "source_id": blocker_id,
+                        "source_player": opponent,
                         "target": "creature",
                         "target_id": attacker_id,
                         "target_player": current_player,
@@ -1295,6 +1299,7 @@ class GameEngine:
                             damage_queue.append({
                                 "source": "creature",
                                 "source_id": attacker_id,
+                                "source_player": current_player,
                                 "target": "creature", 
                                 "target_id": blocker_id,
                                 "target_player": opponent,
@@ -1307,6 +1312,7 @@ class GameEngine:
                         damage_queue.append({
                             "source": "creature",
                             "source_id": blocker_id,
+                            "source_player": opponent,
                             "target": "creature",
                             "target_id": attacker_id,
                             "target_player": current_player,
@@ -1319,6 +1325,7 @@ class GameEngine:
                         damage_queue.append({
                             "source": "creature",
                             "source_id": attacker_id,
+                            "source_player": current_player,
                             "target": "player",
                             "target_player": opponent,
                             "damage": remaining_damage
@@ -1330,6 +1337,7 @@ class GameEngine:
                 damage_queue.append({
                     "source": "creature",
                     "source_id": attacker_id,
+                    "source_player": current_player,
                     "target": "player",
                     "target_player": opponent,
                     "damage": attacker_power
@@ -1356,10 +1364,34 @@ class GameEngine:
         
         self._info("Combat damage resolution begins.")
         
-        # Apply all damage simultaneously
+        current_player = game_state.get("current_player")
+        opponent = self.player2 if current_player == self.player1 else self.player1
+
+        def is_alive(owner, cid):
+            if not owner or cid is None:
+                return False
+            cid_str = str(cid)
+            cdata = game_state.get(owner, {}).get("creatures", {}).get(cid_str)
+            if not cdata:
+                return False
+            card = cdata.get("card", {})
+            return card.get("defence", 0) > 0
+
+        # Apply all damage sequentially, skipping dead sources/targets
         for damage_entry in damage_queue:
             target_type = damage_entry["target"]
             damage_amount = damage_entry["damage"]
+            source_id = damage_entry.get("source_id")
+            source_player = damage_entry.get("source_player")
+            if source_id is not None and not source_player:
+                if current_player and str(source_id) in game_state.get(current_player, {}).get("creatures", {}):
+                    source_player = current_player
+                elif opponent and str(source_id) in game_state.get(opponent, {}).get("creatures", {}):
+                    source_player = opponent
+
+            if source_id is not None and source_player:
+                if not is_alive(source_player, source_id):
+                    continue
             
             if target_type == "player":
                 # Damage to player health
@@ -1373,7 +1405,9 @@ class GameEngine:
                 target_player = damage_entry["target_player"]
                 target_id = damage_entry["target_id"]
                 
-                if target_id in game_state[target_player]["creatures"]:
+                if not is_alive(target_player, target_id):
+                    continue
+                if str(target_id) in game_state[target_player]["creatures"]:
                     creature_data = game_state[target_player]["creatures"][target_id]
                     creature_card = creature_data["card"]
                     
