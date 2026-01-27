@@ -3,11 +3,11 @@ class EffectParser:
     Parses card effects.
     """
     
-    TRIGGERS = ['summon?', 'block?', 'attack?', 'tap?', 'enter?']
+    TRIGGERS = ['summon?', 'block?', 'attack?', 'tap?', 'enter?', 'discard?']
     STATIC_ABILITIES = ['haste', 'flying', 'reach', 'entertap', 'unblockable', 'vigilant', 'trample']
     MODIFIERS = ['inc', 'dec']
     ACTIONS = ['gen', 'draw', 'discard', 'heal', 'return', 'count', 'damage', 'destroy',
-               'add', 'kill', 'morph', 'revive', 'nomanareset', 'castinc', 'castdec', 'invuln']
+               'add', 'kill', 'morph', 'revive', 'nomanareset', 'castinc', 'castdec', 'invuln', 'create']
     TARGET_TYPES = ['creature', 'player']
     CONDITIONS = ['attackonly', 'blockonly']
     PLACES = ['graveyard', 'deck', 'hand']
@@ -97,6 +97,7 @@ class EffectParser:
                         result['value'] = int(tokens[idx])
                     except ValueError:
                         result['value'] = 1
+                idx += 1
             else:
                 result['value'] = 1
             
@@ -165,6 +166,25 @@ class EffectParser:
                     elif target_token in self.TARGET_TYPES:
                         result['target_type'] = target_token
                         idx += 1
+
+        elif action == 'create':
+            if idx < len(tokens):
+                if isinstance(tokens[idx], tuple):
+                    result['value'] = tokens[idx]
+                else:
+                    try:
+                        result['value'] = int(tokens[idx])
+                    except (ValueError, TypeError):
+                        result['value'] = 1
+                idx += 1
+            else:
+                result['value'] = 1
+
+            if idx < len(tokens):
+                name_token = tokens[idx]
+                if isinstance(name_token, str):
+                    result['name'] = name_token
+                    idx += 1
         
         elif action == 'count':
             if idx < len(tokens):

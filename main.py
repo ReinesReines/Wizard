@@ -555,7 +555,7 @@ def generate_random_deck_counts():
         while added < needed and guard < 2000:
             card = random.choice(pool)
             name = card.name
-            if counts.get(name, 0) >= 4:
+            if NAME_TO_TYPE.get(name) != "Land" and counts.get(name, 0) >= 4:
                 guard += 1
                 continue
             counts[name] = counts.get(name, 0) + 1
@@ -3021,7 +3021,7 @@ while running:
                     for name, rect in rects.get("add", {}).items():
                         if rect.collidepoint(event.pos):
                             current = deck_creator_state["counts"].get(name, 0)
-                            if current < 4:
+                            if NAME_TO_TYPE.get(name) == "Land" or current < 4:
                                 totals = get_deck_totals(deck_creator_state["counts"])
                                 if totals["Total"] < 60:
                                     deck_creator_state["counts"][name] = current + 1

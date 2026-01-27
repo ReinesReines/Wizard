@@ -64,6 +64,92 @@ class GameEngine:
         if creature_data and isinstance(creature_data, dict):
             if creature_data.get("base_attack") is not None:
                 creature_data["base_attack"] = max(0, creature_data["base_attack"])
+
+    def _get_next_card_id(self, game_state):
+        max_id = 0
+
+        def consider(value):
+            nonlocal max_id
+            if value is None:
+                return
+            try:
+                num = int(value)
+            except (TypeError, ValueError):
+                return
+            if num > max_id:
+                max_id = num
+
+        for player in [self.player1, self.player2]:
+            player_data = game_state.get(player, {})
+            for card in player_data.get("deck", []):
+                if isinstance(card, dict):
+                    consider(card.get("id"))
+            for card in player_data.get("graveyard", []):
+                if isinstance(card, dict):
+                    consider(card.get("id"))
+            for card in player_data.get("hand", {}).values():
+                if isinstance(card, dict):
+                    consider(card.get("id"))
+            for cid, cdata in player_data.get("creatures", {}).items():
+                consider(cid)
+                if isinstance(cdata, dict):
+                    consider(cdata.get("card", {}).get("id"))
+            for lid, ldata in player_data.get("lands", {}).items():
+                consider(lid)
+                if isinstance(ldata, dict):
+                    consider(ldata.get("card", {}).get("id"))
+
+        self.card_id_counter = max(self.card_id_counter, max_id + 1)
+        next_id = self.card_id_counter
+        self.card_id_counter += 1
+        return next_id
+
+    def _create_creature_instances(self, owner, creature_name, count, game_state):
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            count = 1
+        if count <= 0:
+            return []
+        if not creature_name:
+            self._error("Create failed: creature name required.")
+            return None
+        template = self._find_card_by_name(creature_name)
+        if not template:
+            self._error(f"Create failed: card '{creature_name}' not found.")
+            return None
+        if not isinstance(template, SummonCard):
+            self._error(f"Create failed: '{creature_name}' is not a creature.")
+            return None
+
+        created_ids = []
+        for _ in range(count):
+            new_card = self._reconstruct_card(template.to_dict())
+            if not new_card:
+                self._error(f"Create failed: could not reconstruct '{creature_name}'.")
+                return None
+            new_id = self._get_next_card_id(game_state)
+            new_card.id = new_id
+            executed_card = execute_card(new_card, game_state, owner)
+            if enters_tapped(executed_card):
+                executed_card.tapped = 1
+            keywords = get_all_keywords(executed_card)
+            executed_card.status = ", ".join(keywords) if keywords else ""
+            game_state[owner]["creatures"][str(new_id)] = {
+                "card": executed_card.to_dict(),
+                "action": "attack",
+                "summoning_sickness": not card_has_ability(executed_card, "haste"),
+                "base_attack": executed_card.attack,
+                "base_defence": executed_card.defence,
+                "damage_taken": 0
+            }
+            created_ids.append(new_id)
+            self._info(
+                f"{owner} creates {executed_card.name} (ID {new_id}) "
+                f"{executed_card.attack}/{executed_card.defence}."
+            )
+
+        return created_ids
     
     def count(self, target: Cards, deck):
         """Counts the number of target cards in a given deck."""
@@ -333,6 +419,8 @@ class GameEngine:
         opponent = self.player2 if player == self.player1 else self.player1
         needs_death_check = False
         pending_draws = []
+        discarded_events = []
+        created_ids = []
         
         def add_status(card, status):
             existing = card.get("status", "")
@@ -639,6 +727,7 @@ class GameEngine:
                 if len(hand) < value:
                     discard_ids = list(hand.keys())
                     for cid in discard_ids:
+                        discarded_events.append((target_player, hand[cid]))
                         game_state[target_player]["graveyard"].append(hand[cid])
                         del hand[cid]
                     self._info(f"{target_player} discards {len(discard_ids)} card(s).")
@@ -650,7 +739,20 @@ class GameEngine:
                     }
                     self._info(f"{target_player} must discard {value} card(s).")
 
+            elif action == "create":
+                created = self._create_creature_instances(player, effect.get("name"), value, game_state)
+                if created is None:
+                    return False
+                created_ids.extend(created)
+
         self._save_state(game_state)
+        if discarded_events:
+            for target_player, card_dict in discarded_events:
+                self.check_discard_triggers(target_player, card_dict)
+        if created_ids:
+            for new_id in created_ids:
+                self.check_enter_triggers(player, new_id)
+                self.check_summon_triggers(player, new_id)
         if pending_draws:
             for target_player, value in pending_draws:
                 drawn = 0
@@ -760,6 +862,7 @@ class GameEngine:
             return
         
         player_data = game_state[player]
+        discarded_cards = []
         for card_id in card_ids:
             if card_id not in player_data["hand"]:
                 self._error(f"Discard failed: card ID {card_id} not in {player}'s hand.")
@@ -767,8 +870,11 @@ class GameEngine:
             card_dict = player_data["hand"][card_id]
             del player_data["hand"][card_id]
             player_data["graveyard"].append(card_dict)
+            discarded_cards.append(card_dict)
         
         self._save_state(game_state)
+        for card_dict in discarded_cards:
+            self.check_discard_triggers(player, card_dict)
         return True
     
     def end_turn(self, player):
@@ -1093,7 +1199,7 @@ class GameEngine:
                     continue
                 
                 # Use can_block() for validation (includes flying/reach/unblockable checks)
-                if not self.can_block(blocker_id_str, attacker_id_str):
+                if not self.can_block(blocker_id_str, attacker_id_str, defender):
                     blocker_data = defender_data["creatures"][blocker_id_str]
                     self._error(f"{blocker_data['card']['name']} cannot block (tapped/flying/unblockable).")
                     continue
@@ -1503,7 +1609,7 @@ class GameEngine:
         self._save_state(game_state)
         return deaths
 
-    def can_block(self, blocker_id, attacker_id):
+    def can_block(self, blocker_id, attacker_id, defender=None):
         """
         Check if blocker can block attacker.
         Handles flying/reach restrictions.
@@ -1511,19 +1617,22 @@ class GameEngine:
         game_state = self._load_state()
         
         # Get current and opposing players
-        current_player = game_state["current_player"]  
-        opponent = self.player2 if current_player == self.player1 else self.player1
+        attacker_owner = game_state.get("combat", {}).get("attacker") or game_state.get("current_player")
+        if attacker_owner not in (self.player1, self.player2):
+            return False
+        if defender is None:
+            defender = self.player2 if attacker_owner == self.player1 else self.player1
         
         # Get attacker data
-        if str(attacker_id) not in game_state[current_player]["creatures"]:
+        if str(attacker_id) not in game_state[attacker_owner]["creatures"]:
             return False
         
         # Get blocker data  
-        if str(blocker_id) not in game_state[opponent]["creatures"]:
+        if str(blocker_id) not in game_state[defender]["creatures"]:
             return False
             
-        attacker_data = game_state[current_player]["creatures"][str(attacker_id)]
-        blocker_data = game_state[opponent]["creatures"][str(blocker_id)]
+        attacker_data = game_state[attacker_owner]["creatures"][str(attacker_id)]
+        blocker_data = game_state[defender]["creatures"][str(blocker_id)]
         
         attacker_card = attacker_data["card"]
         blocker_card = blocker_data["card"]
@@ -1780,6 +1889,38 @@ class GameEngine:
         # Note: _execute_trigger_effect handles its own _save_state calls
         return True
 
+    def check_discard_triggers(self, discarded_player, discarded_card):
+        """
+        Check for and execute 'discard?' triggers when a card is discarded.
+        """
+        game_state = self._load_state()
+        card_name = "card"
+        if isinstance(discarded_card, dict):
+            card_name = discarded_card.get("name", "card")
+
+        self._info(f"Discard triggers check ({card_name}).")
+
+        triggers_fired = False
+
+        for player in [self.player1, self.player2]:
+            if player not in game_state:
+                continue
+
+            player_data = game_state[player]
+            for creature_id, creature_data in player_data["creatures"].items():
+                creature_card = creature_data["card"]
+                effect = creature_card.get("effect", "")
+
+                if "discard?" in effect:
+                    triggers_fired = True
+                    self._info(f"{creature_card['name']} triggers (discard?).")
+                    self._execute_trigger_effect(player, creature_id, effect, "discard?")
+
+        if not triggers_fired:
+            self._info("No discard triggers.")
+
+        return True
+
     def _execute_trigger_effect(self, player, creature_id, effect_string, trigger_type):
         """
         Execute a specific trigger effect on a creature.
@@ -1817,6 +1958,7 @@ class GameEngine:
         # Find and execute the matching trigger
         is_temporary = trigger_type in ("attack?", "block?", "attack", "block")
         should_persist = not is_temporary
+        created_ids = []
 
         for effect in parsed_effects:
             trigger_without_question = trigger_type.replace("?", "")
@@ -1941,6 +2083,12 @@ class GameEngine:
                         hand[str(card["id"])] = card
                         drawn += 1
                     self._info(f"{player} draws {drawn} card(s).")
+
+                elif effect["action"] == "create":
+                    created = self._create_creature_instances(player, effect.get("name"), effect.get("value", 1), game_state)
+                    if created is None:
+                        return False
+                    created_ids.extend(created)
         
         # For grouped effects like "enter? inc att 1; inc end 1", the parser may split them
         # Look for follow-up effects without triggers that should be part of the same group
@@ -2000,6 +2148,10 @@ class GameEngine:
         
         # Save the modified creature stats
         self._save_state(game_state)
+        if created_ids:
+            for new_id in created_ids:
+                self.check_enter_triggers(player, new_id)
+                self.check_summon_triggers(player, new_id)
         
         return True
 
