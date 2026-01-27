@@ -181,6 +181,42 @@ class Wizard:
             print("Invalid ID. Are you sure this card exists?")
         self.game.play_creature(current_player, creature_id)
 
+    def add_status(self, card_dict, status):
+        """
+        Adds a status to a card, preventing duplicate static statuses (e.g., 'flying', 'vigilant', etc.).
+        """
+        if not status:
+            return
+        # Normalize to list
+        if isinstance(card_dict.get('status'), list):
+            statuses = card_dict['status']
+        elif isinstance(card_dict.get('status'), str):
+            statuses = [s.strip() for s in card_dict['status'].split(',') if s.strip()]
+        else:
+            statuses = []
+
+        # Normalize new status
+        if isinstance(status, list):
+            new_statuses = status
+        else:
+            new_statuses = [status]
+
+        # Only add if not already present (case-insensitive)
+        for s in new_statuses:
+            if not any(s.lower() == existing.lower() for existing in statuses):
+                statuses.append(s)
+        card_dict['status'] = statuses
+
+    def add_status_to_creature(self, player, creature_id, status):
+        """
+        Adds a status to a creature on the board, preventing duplicates.
+        """
+        state = self.game.get_game_state()
+        creature = state[player]["creatures"].get(creature_id)
+        if creature:
+            self.add_status(creature['card'], status)
+            self.game._save_state(state)
+
     def play_land(self, land_id, player=None):
         self.card_played_this_turn += 1
         state = self.game.get_game_state()

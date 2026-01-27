@@ -53,7 +53,7 @@ vergil = SummonCard(name="Vergil", generic_mana=5, sp_mana="blue", description="
 blue_wizar = SummonCard(name="Blue Wizar", generic_mana=1, sp_mana="blue", description="Gains +1 to attack for each blue coloured mana you have when it enters the battlefield.|The power of blue", att=2, end=6, effect="summon? inc att (mana count blue)")
 mind_sorcerer = SummonCard(name="Mind Sorcerer", generic_mana=2, sp_mana="blue", description="An evil sorcerer from the lands between. Draw 1 card when he enters the battlefield.|He reads your mind", att=3, end=4, effect="summon? draw 1")
 wanderer = SummonCard(name="Wanderer", generic_mana=2, sp_mana="blue", description="Flying. A powerful wizar forgotten to time. His true ability is unknown.|What's his name again?", att=3, end=4, effect="flying")
-mind_flayer = SummonCard(name="Mind Flayer", generic_mana=4, sp_mana="blue", description="A mind-controlling illithid that yearns for dominance. Create an intellect devourer when summoned.", att=5, end=5, effect="create 1 \"Intellect Devourer\"")
+mind_flayer = SummonCard(name="Mind Flayer", generic_mana=4, sp_mana="blue", description="A mind-controlling illithid that yearns for dominance. Create an intellect devourer when summoned.", att=5, end=5, effect="summon? create 1 \"Intellect Devourer\"")
 
 # Red creatures
 goblin_raider = SummonCard(name="Goblin Raider", generic_mana=1, sp_mana="red", description="Haste. This creature can attack the turn it enters.", att=2, end=1, effect="haste")
@@ -93,11 +93,11 @@ _universal_cards = [
     # Blue creatures
     skeleton, skeleton_army, phantom_warrior, sea_serpent, arcane_scholar, vergil, blue_wizar,
     # Red creatures
-    goblin_raider, fire_elemental, dragon_whelp, berserker, imp, sazael_the_great, red_wizar,
+    goblin_raider, fire_elemental, dragon_whelp, berserker, imp, sazael_the_great, red_wizar, hero, mind_flayer, mind_sorcerer, intellect_devourer, wanderer
 ]
 
 _land_cards = [
-    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, snake_pit, machine_factory, sea_of_stars, land_of_iridesence,
+    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, snake_pit, machine_factory, sea_of_stars, land_of_iridesence, graveyard
 ]
 
 _spell_cards = [

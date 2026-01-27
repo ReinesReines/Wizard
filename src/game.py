@@ -423,14 +423,29 @@ class GameEngine:
         created_ids = []
         
         def add_status(card, status):
+            """
+            Adds a status to a card, preventing duplicate static statuses (case-insensitive).
+            """
             existing = card.get("status", "")
-            if not existing:
-                card["status"] = status
-            else:
+            # Normalize to list
+            if isinstance(existing, list):
+                statuses = existing
+            elif isinstance(existing, str):
                 statuses = [s.strip() for s in existing.split(",") if s.strip()]
-                if status not in statuses:
-                    statuses.append(status)
-                    card["status"] = ", ".join(statuses)
+            else:
+                statuses = []
+
+            # Normalize new status
+            if isinstance(status, list):
+                new_statuses = status
+            else:
+                new_statuses = [status]
+
+            # Only add if not already present (case-insensitive)
+            for s in new_statuses:
+                if not any(s.lower() == existing.lower() for existing in statuses):
+                    statuses.append(s)
+            card["status"] = statuses
 
         def iter_active_creatures(players):
             for owner in players:

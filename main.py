@@ -82,6 +82,8 @@ def apply_music_state():
     else:
         pygame.mixer.music.set_volume(0.6)
 
+
+# Bunch of variables to keep track of changes
 image_cache = {}
 pil_cache = {}
 hand_hitboxes = []
