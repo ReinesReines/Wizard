@@ -15,7 +15,20 @@ import os
 
 
 class GameEngine:
+    """
+    GameEngine manages the state and logic of the Wizard card game.
+    Handles player actions, game state transitions, combat, spells, lands, and triggers.
+    """
     def __init__(self, player1, player2, deck1, deck2):
+        """
+        Initialize the GameEngine with two players and their decks.
+
+        Args:
+            player1 (str): Name of the first player.
+            player2 (str): Name of the second player.
+            deck1 (list): Deck for player1.
+            deck2 (list): Deck for player2.
+        """
         self.player1 = player1
         self.player2 = player2
 
@@ -31,32 +44,81 @@ class GameEngine:
         self.card_id_counter = 1
 
     def _timestamp(self):
-        """Get current timestamp string."""
+        """
+        Get the current timestamp as a string.
+
+        Returns:
+            str: Current time in '%H:%M:%S' format.
+        """
         return datetime.datetime.now().strftime('%H:%M:%S')
 
     def _log(self, level, message):
+        """
+        Print a log message with a timestamp and level.
+
+        Args:
+            level (str): Log level (e.g., 'INFO', 'WARN', 'ERROR').
+            message (str): The message to log.
+        """
         print(f"[{self._timestamp()}] {level}: {message}")
 
     def _info(self, message):
+        """
+        Print an info-level log message.
+
+        Args:
+            message (str): The message to log.
+        """
         self._log("INFO", message)
 
     def _warn(self, message):
+        """
+        Print a warning-level log message.
+
+        Args:
+            message (str): The message to log.
+        """
         self._log("WARN", message)
 
     def _error(self, message):
+        """
+        Print an error-level log message.
+
+        Args:
+            message (str): The message to log.
+        """
         self._log("ERROR", message)
     
     def _load_state(self):
-        """Load and return the current game state from JSON."""
+        """
+        Load and return the current game state from the JSON file.
+
+        Returns:
+            dict: The current game state.
+        """
         with open(self.game_file, "r") as f:
             return json.load(f)
     
     def _save_state(self, game_state):
-        """Save the game state to JSON."""
+        """
+        Save the given game state to the JSON file.
+
+        Args:
+            game_state (dict): The game state to save.
+        """
         with open(self.game_file, "w") as f:
             json.dump(game_state, f, indent=4)
 
     def _clamp_attack(self, card_dict, creature_data=None):
+        """
+        Clamp the attack value of a card to valid bounds.
+
+        Args:
+            card_dict (dict): The card dictionary.
+            creature_data (dict, optional): Additional creature data.
+        Returns:
+            int: The clamped attack value.
+        """
         if not isinstance(card_dict, dict):
             return
         if "attack" in card_dict and card_dict["attack"] is not None:
@@ -66,6 +128,14 @@ class GameEngine:
                 creature_data["base_attack"] = max(0, creature_data["base_attack"])
 
     def _get_next_card_id(self, game_state):
+        """
+        Get the next unique card ID for a new card instance.
+
+        Args:
+            game_state (dict): The current game state.
+        Returns:
+            int: The next card ID.
+        """
         max_id = 0
 
         def consider(value):
@@ -105,6 +175,17 @@ class GameEngine:
         return next_id
 
     def _create_creature_instances(self, owner, creature_name, count, game_state):
+        """
+        Create one or more creature instances for a player.
+
+        Args:
+            owner (str): The player who owns the creatures.
+            creature_name (str): Name of the creature to create.
+            count (int): Number of instances to create.
+            game_state (dict): The current game state.
+        Returns:
+            list: List of created card IDs.
+        """
         try:
             count = int(count)
         except (TypeError, ValueError):
@@ -152,7 +233,15 @@ class GameEngine:
         return created_ids
     
     def count(self, target: Cards, deck):
-        """Counts the number of target cards in a given deck."""
+        """
+        Count the number of target cards in a given deck.
+
+        Args:
+            target (Cards): The card to count.
+            deck (list): The deck to search.
+        Returns:
+            int: Number of target cards in the deck.
+        """
         x = 0
         for cards in deck:
             if cards.name == target.name:
@@ -160,12 +249,25 @@ class GameEngine:
         return x
     
     def assign_card_ids(self, deck):
-        """Assign unique IDs to each card copy in the deck."""
+        """
+        Assign unique IDs to each card copy in the deck.
+
+        Args:
+            deck (list): The deck to assign IDs to.
+        """
         for card in deck:
             card.id = self.card_id_counter
             self.card_id_counter += 1
     
     def shuffle_deck(self, deck):
+        """
+        Shuffle the given deck and return a new shuffled list.
+
+        Args:
+            deck (list): The deck to shuffle.
+        Returns:
+            list: The shuffled deck.
+        """
         new_deck = []
         while len(deck) > 0:
             to_pop = random.randint(0, len(deck)-1)
@@ -175,7 +277,13 @@ class GameEngine:
     
     def play_creature(self, player, card_id):
         """
-        Play a creature from player's hand to the battlefield.
+        Play a creature from the player's hand to the battlefield.
+
+        Args:
+            player (str): The player playing the creature.
+            card_id (int): The ID of the card to play.
+        Returns:
+            bool: True if successful, False otherwise.
         """
         # Load current game state
         with open(self.game_file, "r") as f:
@@ -263,7 +371,15 @@ class GameEngine:
         return True
 
     def _resolve_spell_target_player(self, caster, target):
-        """Resolve target player from token (self/opponent/player name)."""
+        """
+        Resolve the target player from a token (self, opponent, or player name).
+
+        Args:
+            caster (str): The casting player.
+            target (str): The target token or player name.
+        Returns:
+            str or None: The resolved player name or None if not found.
+        """
         opponent = self.player2 if caster == self.player1 else self.player1
         if target is None:
             return None
@@ -277,7 +393,15 @@ class GameEngine:
         return None
 
     def _resolve_spell_target_creature(self, game_state, target_id):
-        """Return (owner, creature_data) for a target creature id."""
+        """
+        Return the (owner, creature_data) for a target creature ID.
+
+        Args:
+            game_state (dict): The current game state.
+            target_id (int or str): The target creature ID.
+        Returns:
+            tuple: (owner, creature_data) or (None, None) if not found.
+        """
         if target_id is None:
             return None, None
         target_id_str = str(target_id)
@@ -287,7 +411,16 @@ class GameEngine:
         return None, None
 
     def _resolve_target_kind(self, player, game_state, target):
-        """Return ('creature', owner, creature_data) or ('player', player_name, None)."""
+        """
+        Return the kind of target: ('creature', owner, creature_data) or ('player', player_name, None).
+
+        Args:
+            player (str): The acting player.
+            game_state (dict): The current game state.
+            target: The target identifier.
+        Returns:
+            tuple: Target kind and details, or None.
+        """
         owner, creature_data = self._resolve_spell_target_creature(game_state, target)
         if owner and creature_data:
             return "creature", owner, creature_data
@@ -297,7 +430,16 @@ class GameEngine:
         return None, None, None
 
     def _validate_spell_target(self, player, card_dict, target):
-        """Validate target matches effect target_type (creature/player)."""
+        """
+        Validate that the target matches the effect's required target type (creature/player).
+
+        Args:
+            player (str): The casting player.
+            card_dict (dict): The spell card dictionary.
+            target: The target identifier.
+        Returns:
+            bool: True if valid, False otherwise.
+        """
         try:
             from .modules.parser import EffectParser
         except:
@@ -359,7 +501,16 @@ class GameEngine:
         return True
 
     def cast_spell(self, player, card_id, target=None):
-        """Cast a spell from hand and apply its effects to the specified target."""
+        """
+        Cast a spell from hand and apply its effects to the specified target.
+
+        Args:
+            player (str): The casting player.
+            card_id (int): The ID of the spell card.
+            target: The spell's target, if any.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         game_state = self._load_state()
 
         if player not in game_state:
@@ -406,7 +557,16 @@ class GameEngine:
         return True
 
     def apply_spell_effect(self, player, card_dict, target=None):
-        """Resolve a spell's effect string against a target."""
+        """
+        Resolve a spell's effect string against a target.
+
+        Args:
+            player (str): The casting player.
+            card_dict (dict): The spell card dictionary.
+            target: The spell's target, if any.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         try:
             from .modules.parser import EffectParser
         except:
@@ -784,7 +944,14 @@ class GameEngine:
     # ===================
     
     def draw_card(self, player):
-        """Move top card from deck to hand."""
+        """
+        Move the top card from the player's deck to their hand.
+
+        Args:
+            player (str): The player drawing a card.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -810,7 +977,12 @@ class GameEngine:
         return True
     
     def start_turn(self, player):
-        """Initialize turn, increment counter, set active player."""
+        """
+        Initialize the turn, increment the turn counter, and set the active player.
+
+        Args:
+            player (str): The player whose turn is starting.
+        """
         game_state = self._load_state()
         
         game_state["turn_number"] = game_state.get("turn_number", 0) + 1
@@ -823,7 +995,12 @@ class GameEngine:
         self._save_state(game_state)
     
     def untap_step(self, player):
-        """Untap all creatures and lands."""
+        """
+        Untap all creatures and lands for the given player.
+
+        Args:
+            player (str): The player whose permanents are untapped.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -853,7 +1030,12 @@ class GameEngine:
         self._save_state(game_state)
     
     def draw_step(self, player):
-        """Draw 1 card (skip turn 1 for starting player)."""
+        """
+        Draw one card for the player (skip on turn 1 for starting player).
+
+        Args:
+            player (str): The player drawing a card.
+        """
         game_state = self._load_state()
         turn_number = game_state.get("turn_number", 1)
         
@@ -870,7 +1052,15 @@ class GameEngine:
         self._save_state(game_state)
 
     def discard_cards(self, player, card_ids):
-        """Discard cards from hand."""
+        """
+        Discard cards from the player's hand.
+
+        Args:
+            player (str): The player discarding cards.
+            card_ids (list): List of card IDs to discard.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -893,7 +1083,12 @@ class GameEngine:
         return True
     
     def end_turn(self, player):
-        """Run cleanup, clear mana pool, shift to opponent."""
+        """
+        Run cleanup, clear mana pool, and shift turn to the opponent.
+
+        Args:
+            player (str): The player ending their turn.
+        """
         game_state = self._load_state()
         
         self._info(f"End phase for {player}.")
@@ -914,7 +1109,12 @@ class GameEngine:
         self.turn += 1
     
     def clear_mana_pool(self, player):
-        """Reset all mana to 0."""
+        """
+        Reset all mana in the player's pool to 0.
+
+        Args:
+            player (str): The player whose mana pool is cleared.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -939,7 +1139,15 @@ class GameEngine:
     # ===================
     
     def play_land(self, player, card_id):
-        """Move land from hand to lands dict."""
+        """
+        Move a land card from the player's hand to their lands in play.
+
+        Args:
+            player (str): The player playing the land.
+            card_id (int): The ID of the land card.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -989,7 +1197,16 @@ class GameEngine:
         return True
     
     def tap_land(self, player, land_id, color_choice=None):
-        """Execute 'tap? gen [color]' effect, set tapped=1."""
+        """
+        Execute the 'tap? gen [color]' effect and set the land as tapped.
+
+        Args:
+            player (str): The player tapping the land.
+            land_id (int): The ID of the land card.
+            color_choice (str, optional): The color of mana to generate.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -1051,7 +1268,16 @@ class GameEngine:
         return True
     
     def check_mana_cost(self, player, generic, sp_mana):
-        """Return True if player has enough mana."""
+        """
+        Check if the player has enough mana to pay a cost.
+
+        Args:
+            player (str): The player paying mana.
+            generic (int): Generic mana required.
+            sp_mana (str): Specific mana color required.
+        Returns:
+            bool: True if the player can pay, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -1078,7 +1304,16 @@ class GameEngine:
         return total_mana >= total_needed
     
     def pay_mana(self, player, generic, sp_mana):
-        """Deduct colored mana first, then generic from remaining."""
+        """
+        Deduct colored mana first, then generic mana from the remaining pool.
+
+        Args:
+            player (str): The player paying mana.
+            generic (int): Generic mana required.
+            sp_mana (str): Specific mana color required.
+        Returns:
+            bool: True if payment was successful, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -1117,10 +1352,17 @@ class GameEngine:
     def declare_attackers(self, player, creature_ids):
         """
         Declare which creatures attack.
+
         1. Validate creatures can attack (not tapped, no summoning sickness)
-        2. Trigger "attack?" effects IMMEDIATELY
+        2. Trigger "attack?" effects immediately
         3. Tap creatures (unless vigilant)
         4. Store in combat state
+
+        Args:
+            player (str): The attacking player.
+            creature_ids (list): List of creature IDs to attack with.
+        Returns:
+            bool: True if successful, False otherwise.
         """
         game_state = self._load_state()
         
@@ -1157,7 +1399,13 @@ class GameEngine:
             attackers.append(creature_id_str)
 
             # Check if vigilant (from status or effect)
-            has_vigilant = "vigilant" in card.get("status", "").lower() or "notap" in card.get("status", "").lower()
+            status = card.get("status", "")
+            # If status is a list, join to string
+            if isinstance(status, list):
+                status_str = ", ".join(status).lower()
+            else:
+                status_str = str(status).lower()
+            has_vigilant = "vigilant" in status_str or "notap" in status_str
 
             # Tap creature unless vigilant
             if not has_vigilant:
@@ -1184,7 +1432,12 @@ class GameEngine:
     def declare_blockers(self, defender, block_assignments):
         """
         Declare which creatures block which attackers.
-        block_assignments = {"attacker_id": ["blocker_id1", "blocker_id2"]}
+
+        Args:
+            defender (str): The defending player.
+            block_assignments (dict): Mapping of attacker IDs to lists of blocker IDs.
+        Returns:
+            bool: True if successful, False otherwise.
         """
         game_state = self._load_state()
         
@@ -1242,7 +1495,15 @@ class GameEngine:
         return True
     
     def can_attack(self, player, creature_id):
-        """Check if creature can attack (not tapped, no summoning sickness)."""
+        """
+        Check if a creature can attack (not tapped, no summoning sickness).
+
+        Args:
+            player (str): The player controlling the creature.
+            creature_id (int): The ID of the creature.
+        Returns:
+            bool: True if the creature can attack, False otherwise.
+        """
         game_state = self._load_state()
         
         if player not in game_state:
@@ -1267,6 +1528,15 @@ class GameEngine:
         return True
 
     def can_attack_reason(self, player, creature_id):
+        """
+        Return the reason a creature cannot attack, or None if it can attack.
+
+        Args:
+            player (str): The player controlling the creature.
+            creature_id (int): The ID of the creature.
+        Returns:
+            str or None: Reason string or None if can attack.
+        """
         game_state = self._load_state()
         if player not in game_state:
             return "player not found"
@@ -1285,6 +1555,10 @@ class GameEngine:
         return None
     
     def cleanup_temporary_effects(self):
+        """
+        Remove temporary buffs at end of turn (like attack? triggers).
+        Restores stats to base, then reapplies combat damage (which is permanent).
+        """
         """
         Remove temporary buffs at end of turn (like attack? triggers).
         Restores stats to base, then reapplies combat damage (which is permanent).
@@ -1330,6 +1604,14 @@ class GameEngine:
         self._save_state(game_state)
 
     def calculate_combat_damage(self):
+        """
+        Build the damage queue for all attackers and blockers.
+        Handles trample: assigns lethal damage to blockers, excess to player.
+        Does NOT apply damage yet - that's done in resolve_damage_queue().
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         """
         Build damage queue for all attackers and blockers.
         Handles trample: assigns lethal damage to blockers, excess to player.
@@ -1496,6 +1778,13 @@ class GameEngine:
 
     def resolve_damage_queue(self):
         """
+        Apply all damage simultaneously from the damage queue.
+        Then check for creature deaths.
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        """
         Apply ALL damage simultaneously from the damage queue.
         Then check for creature deaths.
         """
@@ -1582,6 +1871,9 @@ class GameEngine:
 
     def check_creature_deaths(self):
         """
+        Check for and handle all creature deaths after damage is applied.
+        """
+        """
         Move creatures with defence ≤ 0 to graveyard.
         Check both players' creatures.
         """
@@ -1626,6 +1918,16 @@ class GameEngine:
 
     def can_block(self, blocker_id, attacker_id, defender=None):
         """
+        Check if a blocker can block a given attacker.
+
+        Args:
+            blocker_id (int): The ID of the blocking creature.
+            attacker_id (int): The ID of the attacking creature.
+            defender (str, optional): The defending player.
+        Returns:
+            bool: True if the block is legal, False otherwise.
+        """
+        """
         Check if blocker can block attacker.
         Handles flying/reach restrictions.
         """
@@ -1651,6 +1953,11 @@ class GameEngine:
         
         attacker_card = attacker_data["card"]
         blocker_card = blocker_data["card"]
+
+        def has_keyword(card, keyword):
+            status = str(card.get("status", "") or "").lower()
+            effect = str(card.get("effect", "") or "").lower()
+            return keyword in status or keyword in effect
         
         # Check if blocker is tapped
         if blocker_card["tapped"] == 1:
@@ -1661,9 +1968,9 @@ class GameEngine:
             return False
         
         # Check flying/reach restrictions
-        attacker_has_flying = "flying" in attacker_card.get("status", "").lower()
-        blocker_has_flying = "flying" in blocker_card.get("status", "").lower()
-        blocker_has_reach = "reach" in blocker_card.get("status", "").lower()
+        attacker_has_flying = has_keyword(attacker_card, "flying")
+        blocker_has_flying = has_keyword(blocker_card, "flying")
+        blocker_has_reach = has_keyword(blocker_card, "reach")
         
         # Flying creatures can only be blocked by flying or reach
         if attacker_has_flying and not (blocker_has_flying or blocker_has_reach):
@@ -1672,6 +1979,9 @@ class GameEngine:
         return True
 
     def check_win_condition(self):
+        """
+        Check if a win condition has been met and handle game end if so.
+        """
         """
         Check if any player has won (health ≤ 0, empty deck on draw, or no cards).
         Returns winner name or None.
@@ -1711,6 +2021,15 @@ class GameEngine:
 
     def assign_damage_order(self, attacker_id, blocker_ids):
         """
+        Assign the order in which an attacker deals damage to blockers.
+
+        Args:
+            attacker_id (int): The attacking creature's ID.
+            blocker_ids (list): List of blocking creature IDs.
+        Returns:
+            list: Ordered list of blocker IDs.
+        """
+        """
         For multiple blockers: attacker chooses damage assignment order.
         Returns ordered list of blocker IDs.
         """
@@ -1719,6 +2038,16 @@ class GameEngine:
         return [str(bid) for bid in blocker_ids]
 
     def move_to_graveyard(self, player, card_id, from_zone):
+        """
+        Move a card to the player's graveyard from a specified zone.
+
+        Args:
+            player (str): The player owning the card.
+            card_id (int): The ID of the card.
+            from_zone (str): The zone from which to move the card.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         """
         Move card from battlefield/hand to graveyard.
         """
@@ -1757,6 +2086,15 @@ class GameEngine:
 
     def count_graveyard(self, player, card_name):
         """
+        Count the number of cards with a given name in a player's graveyard.
+
+        Args:
+            player (str): The player whose graveyard to search.
+            card_name (str): The name of the card to count.
+        Returns:
+            int: Number of cards with the given name in the graveyard.
+        """
+        """
         Count cards with specific name in player's graveyard.
         Used for graveyard counting effects (Skeleton Army).
         """
@@ -1775,6 +2113,13 @@ class GameEngine:
         return count
 
     def check_summon_triggers(self, summoning_player, summoning_card_id):
+        """
+        Check and execute any 'summon?' triggers for a newly summoned creature.
+
+        Args:
+            summoning_player (str): The player who summoned the creature.
+            summoning_card_id (int): The ID of the summoned creature.
+        """
         """
         Check for and execute 'summon?' triggers when a creature is summoned.
         """
@@ -1801,6 +2146,13 @@ class GameEngine:
         return True
 
     def check_enter_triggers(self, entering_player, entering_card_id):
+        """
+        Check and execute any 'enter?' triggers for a creature entering the battlefield.
+
+        Args:
+            entering_player (str): The player whose creature entered.
+            entering_card_id (int): The ID of the entering creature.
+        """
         """
         Check for and execute 'enter?' triggers when a creature enters.
         ALL creatures on battlefield can trigger when another creature enters.
@@ -1842,6 +2194,13 @@ class GameEngine:
 
     def check_attack_triggers(self, attacking_player, attacker_ids):
         """
+        Check and execute any 'attack?' triggers for attacking creatures.
+
+        Args:
+            attacking_player (str): The player attacking.
+            attacker_ids (list): List of attacking creature IDs.
+        """
+        """
         Check for and execute 'attack?' triggers when creatures attack.
         """
         game_state = self._load_state()
@@ -1873,6 +2232,13 @@ class GameEngine:
         return True
 
     def check_block_triggers(self, blocking_player, blocker_ids):
+        """
+        Check and execute any 'block?' triggers for blocking creatures.
+
+        Args:
+            blocking_player (str): The player blocking.
+            blocker_ids (list): List of blocking creature IDs.
+        """
         """
         Check for and execute 'block?' triggers when creatures block.
         """
@@ -1906,6 +2272,13 @@ class GameEngine:
 
     def check_discard_triggers(self, discarded_player, discarded_card):
         """
+        Check and execute any 'discard?' triggers for discarded cards.
+
+        Args:
+            discarded_player (str): The player discarding a card.
+            discarded_card (dict): The discarded card dictionary.
+        """
+        """
         Check for and execute 'discard?' triggers when a card is discarded.
         """
         game_state = self._load_state()
@@ -1937,6 +2310,17 @@ class GameEngine:
         return True
 
     def _execute_trigger_effect(self, player, creature_id, effect_string, trigger_type):
+        """
+        Execute a trigger effect string for a given creature and trigger type.
+
+        Args:
+            player (str): The player controlling the creature.
+            creature_id (int): The ID of the creature.
+            effect_string (str): The effect string to execute.
+            trigger_type (str): The type of trigger (e.g., 'attack?', 'block?').
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         """
         Execute a specific trigger effect on a creature.
         Parses and applies effects like 'attack? inc att 2; dec end 1'.
@@ -2171,6 +2555,14 @@ class GameEngine:
         return True
 
     def _reconstruct_card(self, card_dict):
+        """
+        Reconstruct a card object from its dictionary representation.
+
+        Args:
+            card_dict (dict): The card dictionary.
+        Returns:
+            Cards: The reconstructed card object, or None if invalid.
+        """
         """Reconstruct a card object from a dictionary."""
         card_type = card_dict.get("type")
         
@@ -2223,6 +2615,14 @@ class GameEngine:
             return None
 
     def _find_card_by_name(self, name):
+        """
+        Find a card template by its name.
+
+        Args:
+            name (str): The name of the card to find.
+        Returns:
+            Cards: The card template, or None if not found.
+        """
         """Find a card definition by name in card_index."""
         try:
             from . import card_index as card_index_module
@@ -2236,6 +2636,12 @@ class GameEngine:
         return None
 
     def get_game_state(self):
+        """
+        Get the current game state as a dictionary.
+
+        Returns:
+            dict: The current game state.
+        """
         """Get the current game state with proper formatting for CLI."""
         game_state = self._load_state()
         
@@ -2255,6 +2661,9 @@ class GameEngine:
         return game_state
 
     def ready(self):
+        """
+        Check if the game engine is ready for play.
+        """
         """Prepares the game state and variables for the next game."""
         # resets the .json file to an empty JSON object
         ts = time.time()

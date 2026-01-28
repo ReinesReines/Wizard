@@ -97,7 +97,7 @@ _universal_cards = [
 ]
 
 _land_cards = [
-    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, snake_pit, machine_factory, sea_of_stars, land_of_iridesence, graveyard
+    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, land_of_iridesence, graveyard
 ]
 
 _spell_cards = [

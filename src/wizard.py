@@ -16,7 +16,7 @@ from card_index import (
     goblin_raider, fire_elemental, dragon_whelp, berserker, imp, sazael_the_great, red_wizar,
     blue_wizar, green_wizar, stone_giant, king_slime, archer, 
     # Lands
-    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, snake_pit, machine_factory, sea_of_stars, land_of_iridesence,
+    forest, island, mountain, tropical_grove, volcanic_peak, wild_highlands, land_of_iridesence, graveyard,
     # Spells
     fireball, wild_hunt, berserk, oath, polymorph_skeleton, healing_word, eldritch_blast, wrath, rot, bless, wingify, scorched_earth, inspiration, magic_missile,
 )
@@ -37,7 +37,7 @@ class Wizard:
             land_pool = [
                 forest, forest, forest, island, island, island,
                 mountain, mountain, tropical_grove, volcanic_peak, wild_highlands,
-                snake_pit, machine_factory, sea_of_stars, land_of_iridesence,
+                land_of_iridesence,
             ]
 
             spell_pool = [

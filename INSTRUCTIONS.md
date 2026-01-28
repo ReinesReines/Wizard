@@ -21,10 +21,15 @@ When blocking a creature, they deal damage to each other, and combat is resolved
 
 ### Statuses
 `flying` - When a creature is flying, this means they cannot be blocked by creatures without `flying` or `reach`.
+
 `reach` - Creatures with reach can block creatures with `flying`.
+
 `trample` - Excess damage from combat resolution gets directly transferred to the player instead.
+
 `vigilant` - Creature does not tap, which means that it can perform multiple actions.
+
 `haste` - Creature does not have summoning sickness and can attack the moment they enter.
+
 `unblockable` - More of a joke as only Vergil has this, but this creature cannot be blocked. At all.
 
 ### Spells
